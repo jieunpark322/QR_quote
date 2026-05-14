@@ -1,0 +1,18 @@
+{
+  "products": [
+    {
+      "code": "ORDER-SYSTEM",
+      "name": "주문 접수 프로그램 사용료",
+      "description": "매장 / 월",
+      "unit_price": 100000,
+      "currency": "KRW"
+    },
+    {
+      "code": "QR-ORDER",
+      "name": "QR오더",
+      "description": "매장 월 정액제",
+      "unit_price": 100000,
+      "currency": "KRW"
+    }
+  ]
+}

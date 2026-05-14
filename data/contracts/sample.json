@@ -1,0 +1,51 @@
+{
+  "document_id": "SM-C-2026-001",
+  "document_type": "contract",
+  "brand_id": "softment",
+  "issued_date": "2026-05-14",
+  "effective_date": "2026-06-01",
+  "contract_term": "2026년 6월 1일부터 2027년 5월 31일까지 (12개월), 이후 본 계약 제2조에 따라 자동 갱신",
+  "counterparty": {
+    "name": "주식회사 예시고객",
+    "registration_number": "111-11-11111",
+    "address": "서울특별시 강남구 테헤란로 123, 5층",
+    "ceo": "김대표",
+    "contact_name": "박담당",
+    "contact_title": "구매팀장",
+    "email": "buyer@example.com"
+  },
+  "subject": "B2B SaaS 솔루션 공급 계약",
+  "line_items": [
+    {
+      "name": "Enterprise Plan (연간 구독)",
+      "description": "사용자 50명, 24/7 기술지원 포함",
+      "qty": 1,
+      "unit_price": 6000000,
+      "currency": "KRW"
+    },
+    {
+      "name": "초기 구축 컨설팅 (5일)",
+      "description": "데이터 마이그레이션 및 사내 교육",
+      "qty": 1,
+      "unit_price": 3000000,
+      "currency": "KRW"
+    }
+  ],
+  "totals": {
+    "subtotal": 9000000,
+    "vat_rate": 0.10,
+    "vat": 900000,
+    "total": 9900000,
+    "currency": "KRW"
+  },
+  "clauses": [
+    { "id": "service_scope" },
+    { "id": "contract_term" },
+    { "id": "payment", "vars": { "payment_days": 30 } },
+    { "id": "ip_ownership" },
+    { "id": "confidentiality", "vars": { "period_years": 3 } },
+    { "id": "termination", "vars": { "notice_days": 30 } },
+    { "id": "governing_law" }
+  ],
+  "notes": null
+}

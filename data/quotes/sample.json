@@ -1,0 +1,42 @@
+{
+  "document_id": "SM-Q-2026-001",
+  "document_type": "quote",
+  "brand_id": "softment",
+  "issued_date": "2026-05-14",
+  "valid_until": "2026-06-13",
+  "counterparty": {
+    "name": "주식회사 예시고객",
+    "registration_number": "111-11-11111",
+    "address": "서울특별시 강남구 테헤란로 123",
+    "contact_name": "김담당",
+    "contact_title": "구매팀장",
+    "email": "buyer@example.com"
+  },
+  "subject": "주문 접수 / QR오더 솔루션 도입 견적",
+  "line_items": [
+    {
+      "name": "주문 접수 프로그램 사용료",
+      "description": "매장 / 월",
+      "qty": 3,
+      "period": 12,
+      "unit_price": 100000,
+      "currency": "KRW",
+      "notes": "3개 매장 × 12개월"
+    },
+    {
+      "name": "QR오더",
+      "description": "매장 월 정액제",
+      "qty": 3,
+      "period": 12,
+      "unit_price": 100000,
+      "currency": "KRW",
+      "notes": "1년 약정"
+    }
+  ],
+  "totals": {
+    "subtotal": 7200000,
+    "currency": "KRW"
+  },
+  "clauses": [],
+  "notes": "본 견적은 위 항목 기준이며, 매장 수 및 약정 기간에 따라 변동될 수 있습니다."
+}

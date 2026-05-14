@@ -1,0 +1,37 @@
+{
+  "brand_id": "softment",
+  "company": {
+    "name_ko": "(주)소프트먼트",
+    "name_en": "Softment Inc.",
+    "registration_number": "704-87-01591",
+    "ceo": "장하일, 정재훈",
+    "address": "서울특별시 금천구 가산디지털1로 145 에이스하이엔드타워3차 905호",
+    "phone": null,
+    "email": null
+  },
+  "branding": {
+    "logo_path": "assets/logo.png",
+    "colors": {
+      "primary": "#5A8CDC",
+      "accent": "#64C8BE",
+      "text": "#23232D"
+    },
+    "font_family": "맑은 고딕"
+  },
+  "signature": {
+    "signer_name": "장하일, 정재훈",
+    "signer_title": "대표이사"
+  },
+  "contact_person": {
+    "name": "박지은",
+    "title": "QR사업부 매니저",
+    "phone": "010-3177-9335",
+    "email": "jieun.park@softment.co.kr"
+  },
+  "bank_account": {
+    "bank": "신한은행",
+    "account_number": "140-015-386074",
+    "account_holder": "(주)소프트먼트"
+  },
+  "footer_text": ""
+}

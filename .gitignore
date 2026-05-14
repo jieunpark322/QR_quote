@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+output/
+input/*_filled.xlsx
+_test_*.py
+_ci_extract/
+.DS_Store
+~$*.xlsx

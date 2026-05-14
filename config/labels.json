@@ -1,0 +1,51 @@
+{
+  "_doc": "양식의 라벨·문구·기본값을 관리하는 파일입니다. 수정 후 재렌더링하면 반영됩니다. 자세한 사용법은 README의 '양식 수정 가이드' 참고.",
+
+  "quote": {
+    "title": "견 적 서",
+    "vat_rate": 0.10,
+    "default_validity_days": 30,
+
+    "labels": {
+      "counterparty_section": "수 신",
+      "subject_prefix": "건명",
+      "etc_notice_section": "기타 안내",
+      "vat_separate_notice": "",
+      "subtotal": "공급가액",
+      "vat": "부가세",
+      "total": "합계 금액"
+    },
+
+    "table_headers": {
+      "name": "품목",
+      "description": "설명",
+      "qty": "수량",
+      "period": "기간(회)",
+      "unit_price": "단가",
+      "amount": "금액",
+      "notes": "비고"
+    },
+
+    "auto_notices": {
+      "validity_template": "본 견적의 유효기간은 {valid_until}까지입니다.",
+      "bank_account_template": "입금 계좌: {bank} {account_number} (예금주: {account_holder})"
+    },
+
+    "static_notices": []
+  },
+
+  "contract": {
+    "title": "계 약 서",
+    "preamble_template": "{supplier_name}(이하 \"갑\"이라 한다)과(와) {counterparty_name}(이하 \"을\"이라 한다)은(는) 위 사안에 관하여 다음과 같이 합의하여 본 계약을 체결한다.",
+
+    "labels": {
+      "overview_section": "계약 개요",
+      "effective_date": "계약 시작일",
+      "contract_term": "계약 기간",
+      "amount_pre_vat": "계약 금액 (VAT 별도)",
+      "amount_with_vat": "계약 금액 (VAT 포함)",
+      "party_a": "갑 (공급자)",
+      "party_b": "을 (수신자)"
+    }
+  }
+}
