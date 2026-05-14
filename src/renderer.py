@@ -136,16 +136,16 @@ def _render_header(doc, brand: Brand, document: QuoteDocument,
     info_table = doc.add_table(rows=1, cols=2)
     info_table.autofit = False
     info_table.alignment = WD_TABLE_ALIGNMENT.LEFT
-    info_table.columns[0].width = Cm(9)
-    info_table.columns[1].width = Cm(8)
+    info_table.columns[0].width = Cm(7.5)
+    info_table.columns[1].width = Cm(9.5)
 
     # 우측 inner 표(5행 × 0.6cm = 3.0cm)와 맞춰 외부 행 높이 명시 → 좌측도 vAlign center 동작
     info_table.rows[0].height = Cm(3.0)
     info_table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
 
     left, right = info_table.rows[0].cells
-    left.width = Cm(9)
-    right.width = Cm(8)
+    left.width = Cm(7.5)
+    right.width = Cm(9.5)
     _vcenter(left)
     _vcenter(right)
     # 좌측 셀 padding 제거 → "(주)소프트먼트" 가 페이지 여백과 정확히 정렬
@@ -195,9 +195,10 @@ def _render_header(doc, brand: Brand, document: QuoteDocument,
     inner.autofit = True
     for idx, (label, value) in enumerate(info_rows):
         row_obj = inner.rows[idx]
-        # row 높이 명시 (LibreOffice가 vAlign 인식하도록)
+        # row 높이 명시 (LibreOffice가 vAlign 인식하도록).
+        # AT_LEAST → 이메일 등 긴 텍스트는 줄바꿈하면서 행이 자동으로 늘어남 (잘림 방지)
         row_obj.height = Cm(0.6)
-        row_obj.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
+        row_obj.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
         lc, vc = row_obj.cells
         _vcenter(lc)
         _vcenter(vc)

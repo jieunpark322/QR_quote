@@ -202,6 +202,43 @@ def render_quote_page():
     st.title("📋 견적서 자동 생성")
     st.caption("폼을 채우고 '견적서 생성' 버튼을 누르면 DOCX/PDF 가 다운로드됩니다.")
 
+    # 브랜드 기본 담당자 정보 (오버라이드 입력의 기본값)
+    try:
+        _brand_for_defaults = load_brand(PROJECT_ROOT, brand_id)
+        _default_cp = _brand_for_defaults.contact_person
+    except Exception:
+        _default_cp = None
+
+    st.subheader("0. 발행 담당자 정보")
+    st.caption(
+        "이번 견적서에 표시될 **소프트먼트 측 담당자** 정보입니다. "
+        "브랜드 기본값에서 자동으로 채워졌습니다 — 자주 바뀌면 여기서 매번 수정하세요. "
+        "(영구 변경은 ⚙ 설정 페이지에서)"
+    )
+    ic1, ic2 = st.columns(2)
+    with ic1:
+        issuer_name = st.text_input(
+            "담당자명", key="issuer_name",
+            value=(_default_cp.name if _default_cp else ""),
+            placeholder="예: 박지은",
+        )
+        issuer_phone = st.text_input(
+            "연락처", key="issuer_phone",
+            value=(_default_cp.phone if _default_cp and _default_cp.phone else ""),
+            placeholder="예: 010-0000-0000",
+        )
+    with ic2:
+        issuer_title = st.text_input(
+            "직책", key="issuer_title",
+            value=(_default_cp.title if _default_cp and _default_cp.title else ""),
+            placeholder="예: QR사업부 매니저",
+        )
+        issuer_email = st.text_input(
+            "이메일", key="issuer_email",
+            value=(_default_cp.email if _default_cp and _default_cp.email else ""),
+            placeholder="예: name@softment.co.kr",
+        )
+
     st.subheader("1. 수신처 정보")
     cp_col1, cp_col2 = st.columns(2)
     with cp_col1:
@@ -324,6 +361,12 @@ def render_quote_page():
             contact_title=cp_contact_title.strip() or None,
             email=cp_email.strip() or None,
         ),
+        issuer_contact_data=dict(
+            name=issuer_name.strip(),
+            title=issuer_title.strip() or None,
+            phone=issuer_phone.strip() or None,
+            email=issuer_email.strip() or None,
+        ),
         subject=subject.strip(),
         items_df=edited_df,
         notes=notes.strip() or None,
@@ -376,7 +419,8 @@ def _compute_auto_notice_lines(brand_id: str, valid_until: date,
 
 
 def _build_quote_artifacts(*, brand_id, issued_date, valid_until,
-                           counterparty_data, subject, items_df, notes,
+                           counterparty_data, issuer_contact_data,
+                           subject, items_df, notes,
                            soffice_available, status_label="문서 생성 중..."):
     """입력값을 검증·렌더링하여 (document_id, docx_bytes, pdf_bytes) 를 반환.
     실패 시 None 반환 (사용자에게 에러는 이미 표시됨)."""
@@ -428,6 +472,21 @@ def _build_quote_artifacts(*, brand_id, issued_date, valid_until,
     except FileNotFoundError as e:
         st.error(f"❌ 브랜드 로드 실패: {e}")
         return None
+
+    # 발행 담당자 정보 — 폼에서 입력한 값으로 일회용 오버라이드
+    issuer_name = (issuer_contact_data.get("name") or "").strip()
+    if issuer_name:
+        brand = brand.model_copy(update={
+            "contact_person": ContactPerson(
+                name=issuer_name,
+                title=issuer_contact_data.get("title"),
+                phone=issuer_contact_data.get("phone"),
+                email=issuer_contact_data.get("email"),
+            )
+        })
+    else:
+        # 담당자명 비워두면 견적서에서 담당자/연락처/이메일 줄 자체를 숨김
+        brand = brand.model_copy(update={"contact_person": None})
 
     output_dir = PROJECT_ROOT / "output"
     output_dir.mkdir(parents=True, exist_ok=True)
