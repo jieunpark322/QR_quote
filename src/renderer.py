@@ -136,16 +136,16 @@ def _render_header(doc, brand: Brand, document: QuoteDocument,
     info_table = doc.add_table(rows=1, cols=2)
     info_table.autofit = False
     info_table.alignment = WD_TABLE_ALIGNMENT.LEFT
-    info_table.columns[0].width = Cm(7.5)
-    info_table.columns[1].width = Cm(9.5)
+    info_table.columns[0].width = Cm(7.0)
+    info_table.columns[1].width = Cm(10.0)
 
     # 우측 inner 표(5행 × 0.6cm = 3.0cm)와 맞춰 외부 행 높이 명시 → 좌측도 vAlign center 동작
     info_table.rows[0].height = Cm(3.0)
     info_table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
 
     left, right = info_table.rows[0].cells
-    left.width = Cm(7.5)
-    right.width = Cm(9.5)
+    left.width = Cm(7.0)
+    right.width = Cm(10.0)
     _vcenter(left)
     _vcenter(right)
     # 좌측 셀 padding 제거 → "(주)소프트먼트" 가 페이지 여백과 정확히 정렬
@@ -192,7 +192,13 @@ def _render_header(doc, brand: Brand, document: QuoteDocument,
         info_rows.append(("Email", brand.company.email or "-"))
 
     inner = right.add_table(rows=len(info_rows), cols=2)
-    inner.autofit = True
+    inner.autofit = False
+    # 명시적 컬럼 너비: 라벨은 좁게(1.8cm), 값(이메일 등)은 넓게(7.5cm)
+    # 외부 우측 셀 9.5cm 안에 들어가도록 설정 (1.8 + 7.5 = 9.3cm, 여유 0.2cm)
+    LABEL_W = Cm(1.8)
+    VALUE_W = Cm(7.5)
+    inner.columns[0].width = LABEL_W
+    inner.columns[1].width = VALUE_W
     for idx, (label, value) in enumerate(info_rows):
         row_obj = inner.rows[idx]
         # row 높이 명시 (LibreOffice가 vAlign 인식하도록).
@@ -200,6 +206,9 @@ def _render_header(doc, brand: Brand, document: QuoteDocument,
         row_obj.height = Cm(0.6)
         row_obj.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
         lc, vc = row_obj.cells
+        # 셀 단위에도 너비 재지정 (LibreOffice가 columns[].width를 무시하는 경우 대비)
+        lc.width = LABEL_W
+        vc.width = VALUE_W
         _vcenter(lc)
         _vcenter(vc)
         _set_cell_bg(lc, "F0F2F8")
