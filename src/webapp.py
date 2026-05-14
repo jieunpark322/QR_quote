@@ -194,33 +194,6 @@ def render_quote_page():
         valid_until = issued_date + timedelta(days=int(valid_days))
         st.caption(f"📅 유효기간: **{valid_until.isoformat()}** 까지")
 
-        st.divider()
-
-        st.header("📦 카탈로그 빠른 추가")
-        if not products:
-            st.info("카탈로그가 비어있습니다. '카탈로그 관리' 페이지에서 상품을 추가하세요.")
-        for p in products:
-            with st.container(border=True):
-                st.write(f"**{p['name']}**")
-                st.caption(
-                    f"{p.get('description', '')} · "
-                    f"₩{int(p.get('unit_price', 0)):,}"
-                )
-                if st.button("+ 추가", key=f"add_{p['code']}",
-                             use_container_width=True):
-                    _add_catalog_row(p)
-                    st.rerun()
-        st.divider()
-        col_a, col_b = st.columns(2)
-        with col_a:
-            if st.button("+ 빈 행", use_container_width=True):
-                _add_blank_row()
-                st.rerun()
-        with col_b:
-            if st.button("전체 초기화", use_container_width=True):
-                _reset_items()
-                st.rerun()
-
         if not soffice_available:
             st.divider()
             st.warning("⚠ LibreOffice 미감지 — PDF 생성이 불가합니다.")
@@ -253,12 +226,45 @@ def render_quote_page():
 
     st.subheader("3. 품목 내역")
     st.caption(
-        "💡 좌측 사이드바의 카탈로그 버튼으로 빠르게 추가하거나, "
+        "💡 아래 드롭다운에서 카탈로그 상품을 선택해 추가하거나, "
         "'+ 빈 행' 으로 직접 입력하세요. 표 셀을 클릭해 수정 가능합니다."
     )
 
+    pick_col, add_col, blank_col, reset_col = st.columns([6, 1.2, 1.2, 1.2])
+    with pick_col:
+        if products:
+            options = list(range(len(products)))
+            picked_idx = st.selectbox(
+                "카탈로그에서 추가",
+                options=options,
+                index=None,
+                format_func=lambda i: (
+                    f"{products[i]['name']} · ₩{int(products[i].get('unit_price', 0)):,}"
+                ),
+                placeholder="상품 선택 (입력해서 검색 가능)...",
+                key="catalog_pick",
+                label_visibility="collapsed",
+            )
+        else:
+            st.info("카탈로그가 비어있습니다. '카탈로그 관리' 페이지에서 상품을 추가하세요.")
+            picked_idx = None
+    with add_col:
+        if st.button("+ 추가", use_container_width=True,
+                     disabled=picked_idx is None,
+                     help="선택한 카탈로그 상품을 품목 표에 추가합니다."):
+            _add_catalog_row(products[picked_idx])
+            st.rerun()
+    with blank_col:
+        if st.button("+ 빈 행", use_container_width=True):
+            _add_blank_row()
+            st.rerun()
+    with reset_col:
+        if st.button("전체 초기화", use_container_width=True):
+            _reset_items()
+            st.rerun()
+
     if st.session_state.items_df.empty:
-        st.info("아직 품목이 없습니다. 좌측 사이드바에서 카탈로그 상품을 추가하거나 '+ 빈 행' 을 누르세요.")
+        st.info("아직 품목이 없습니다. 위 드롭다운에서 카탈로그 상품을 추가하거나 '+ 빈 행' 을 누르세요.")
         edited_df = st.session_state.items_df
     else:
         edited_df = st.data_editor(
