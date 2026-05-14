@@ -9,7 +9,6 @@
 """
 from __future__ import annotations
 
-import base64
 import json
 import os
 import sys
@@ -495,15 +494,36 @@ def _preview_quote(**kwargs):
         st.error("❌ PDF 변환기(LibreOffice)를 사용할 수 없어 미리보기를 표시할 수 없습니다.")
         return
 
-    st.success(f"미리보기: **{document_id}.pdf** — 아래에서 확인하세요.")
-    b64 = base64.b64encode(pdf_bytes).decode("utf-8")
-    pdf_iframe = (
-        f'<iframe src="data:application/pdf;base64,{b64}" '
-        f'width="100%" height="900" style="border:1px solid #ddd;border-radius:6px;" '
-        f'type="application/pdf"></iframe>'
+    st.success(f"미리보기: **{document_id}.pdf**")
+
+    # PDF를 페이지별 이미지로 렌더링 (브라우저 PDF 차단 회피)
+    rendered = False
+    try:
+        import pypdfium2 as pdfium  # noqa: WPS433  (지연 임포트로 실패 시 graceful fallback)
+        pdf = pdfium.PdfDocument(pdf_bytes)
+        try:
+            n_pages = len(pdf)
+            for i in range(n_pages):
+                page = pdf[i]
+                bitmap = page.render(scale=2)  # 2배 해상도 (선명)
+                img = bitmap.to_pil()
+                st.image(img, caption=f"페이지 {i + 1} / {n_pages}",
+                         use_container_width=True)
+            rendered = True
+        finally:
+            pdf.close()
+    except Exception as e:
+        st.warning(f"이미지 미리보기를 사용할 수 없습니다 ({e}). 아래 다운로드로 확인하세요.")
+
+    # 항상 미리보기 PDF 다운로드 제공 (이미지 렌더 실패 시 fallback)
+    st.download_button(
+        ("📑 미리보기 PDF 다운로드" if rendered else "📑 미리보기 PDF 다운로드 (필수)"),
+        data=pdf_bytes,
+        file_name=f"preview_{document_id}.pdf",
+        mime="application/pdf",
+        use_container_width=True,
     )
-    st.components.v1.html(pdf_iframe, height=920)
-    st.caption("💡 미리보기는 화면 표시용입니다. 실제 파일을 받으려면 '📝 견적서 생성' 버튼을 누르세요.")
+    st.caption("💡 미리보기는 화면 표시용입니다. 정식 파일은 '📝 견적서 생성' 버튼을 누르세요.")
 
 
 # ═════════════════════════════════════════════════════════════
