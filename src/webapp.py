@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
 import sys
@@ -305,34 +306,87 @@ def render_quote_page():
         label_visibility="collapsed", height=80,
     )
 
+    # 자동으로 추가되는 문구 미리보기 (config + 브랜드 입금계좌 기준)
+    auto_lines = _compute_auto_notice_lines(brand_id, valid_until, labels)
+    if auto_lines:
+        with st.expander("ℹ 견적서에 자동으로 추가되는 문구 (펼쳐서 확인)", expanded=True):
+            for line in auto_lines:
+                st.markdown(f"- {line}")
+            st.caption("위 문구는 위에 입력한 내용과 함께 '기타 안내' 영역에 자동 포함됩니다.")
+
     st.divider()
-    if st.button("📝 견적서 생성", type="primary", use_container_width=True):
-        _generate_quote(
-            brand_id=brand_id, issued_date=issued_date, valid_until=valid_until,
-            counterparty_data=dict(
-                name=cp_name.strip(),
-                registration_number=cp_reg.strip() or None,
-                address=cp_address.strip() or None,
-                contact_name=cp_contact_name.strip() or None,
-                contact_title=cp_contact_title.strip() or None,
-                email=cp_email.strip() or None,
-            ),
-            subject=subject.strip(),
-            items_df=edited_df,
-            notes=notes.strip() or None,
-            soffice_available=soffice_available,
+    common_args = dict(
+        brand_id=brand_id, issued_date=issued_date, valid_until=valid_until,
+        counterparty_data=dict(
+            name=cp_name.strip(),
+            registration_number=cp_reg.strip() or None,
+            address=cp_address.strip() or None,
+            contact_name=cp_contact_name.strip() or None,
+            contact_title=cp_contact_title.strip() or None,
+            email=cp_email.strip() or None,
+        ),
+        subject=subject.strip(),
+        items_df=edited_df,
+        notes=notes.strip() or None,
+        soffice_available=soffice_available,
+    )
+
+    btn_prev, btn_gen = st.columns([1, 1])
+    with btn_prev:
+        preview_clicked = st.button(
+            "👁 미리보기 (PDF)", use_container_width=True,
+            disabled=not soffice_available,
+            help=("작성한 내용을 PDF로 렌더링해서 이 페이지 안에서 바로 확인합니다. "
+                  "다운로드는 아래 '견적서 생성' 버튼을 누르세요.")
+            if soffice_available else "PDF 변환기(LibreOffice) 미감지 — 미리보기 불가",
+        )
+    with btn_gen:
+        generate_clicked = st.button(
+            "📝 견적서 생성 (다운로드)", type="primary", use_container_width=True,
         )
 
+    if preview_clicked:
+        _preview_quote(**common_args)
+    if generate_clicked:
+        _generate_quote(**common_args)
 
-def _generate_quote(*, brand_id, issued_date, valid_until,
-                    counterparty_data, subject, items_df, notes,
-                    soffice_available):
+
+def _compute_auto_notice_lines(brand_id: str, valid_until: date,
+                               labels: DocumentLabels) -> list[str]:
+    """'기타 안내' 영역에 자동으로 들어가는 고정/계산 문구 목록을 반환."""
+    ql = labels.quote
+    lines: list[str] = []
+    if valid_until and ql.auto_notices.validity_template:
+        valid_str = valid_until.strftime("%Y년 %m월 %d일")
+        lines.append(ql.auto_notices.validity_template.format(valid_until=valid_str))
+    try:
+        brand = load_brand(PROJECT_ROOT, brand_id)
+    except Exception:
+        brand = None
+    if brand and brand.bank_account and ql.auto_notices.bank_account_template:
+        ba = brand.bank_account
+        lines.append(ql.auto_notices.bank_account_template.format(
+            bank=ba.bank,
+            account_number=ba.account_number,
+            account_holder=ba.account_holder or "",
+        ))
+    for static in ql.static_notices:
+        if static:
+            lines.append(static)
+    return lines
+
+
+def _build_quote_artifacts(*, brand_id, issued_date, valid_until,
+                           counterparty_data, subject, items_df, notes,
+                           soffice_available, status_label="문서 생성 중..."):
+    """입력값을 검증·렌더링하여 (document_id, docx_bytes, pdf_bytes) 를 반환.
+    실패 시 None 반환 (사용자에게 에러는 이미 표시됨)."""
     if not counterparty_data["name"]:
         st.error("❌ 회사명은 필수입니다.")
-        return
+        return None
     if not subject:
         st.error("❌ 건명은 필수입니다.")
-        return
+        return None
 
     items: list[LineItem] = []
     for _, row in items_df.iterrows():
@@ -356,7 +410,7 @@ def _generate_quote(*, brand_id, issued_date, valid_until,
 
     if not items:
         st.error("❌ 최소 1개 이상의 품목을 입력해주세요.")
-        return
+        return None
 
     cp_name_short = "".join(c for c in counterparty_data["name"] if c.isalnum())[:8]
     document_id = f"Q-{issued_date.strftime('%Y%m%d')}-{cp_name_short or '고객'}"
@@ -374,20 +428,20 @@ def _generate_quote(*, brand_id, issued_date, valid_until,
         brand = load_brand(PROJECT_ROOT, brand_id)
     except FileNotFoundError as e:
         st.error(f"❌ 브랜드 로드 실패: {e}")
-        return
+        return None
 
     output_dir = PROJECT_ROOT / "output"
     output_dir.mkdir(parents=True, exist_ok=True)
     docx_path = output_dir / f"{document_id}.docx"
 
-    with st.status("문서 생성 중...", expanded=True) as status:
-        st.write("📝 DOCX 생성 중...")
+    with st.status(status_label, expanded=True) as status:
+        st.write("📝 DOCX 렌더링 중...")
         try:
             render_docx(brand, document, PROJECT_ROOT, docx_path)
         except Exception as e:
             status.update(label="❌ DOCX 생성 실패", state="error")
             st.exception(e)
-            return
+            return None
         st.write(f"   ✓ {docx_path.name}")
 
         pdf_bytes = None
@@ -398,11 +452,20 @@ def _generate_quote(*, brand_id, issued_date, valid_until,
                 pdf_bytes = pdf_path.read_bytes()
                 st.write(f"   ✓ {pdf_path.name}")
             except Exception as e:
-                st.warning(f"PDF 변환 실패 (DOCX만 다운로드 가능): {e}")
+                st.warning(f"PDF 변환 실패 (DOCX만 사용 가능): {e}")
 
-        status.update(label="✅ 생성 완료", state="complete")
+        status.update(label="✅ 완료", state="complete")
 
     docx_bytes = docx_path.read_bytes()
+    return document_id, docx_bytes, pdf_bytes
+
+
+def _generate_quote(**kwargs):
+    result = _build_quote_artifacts(status_label="문서 생성 중...", **kwargs)
+    if result is None:
+        return
+    document_id, docx_bytes, pdf_bytes = result
+
     dl1, dl2 = st.columns(2)
     with dl1:
         st.download_button(
@@ -420,6 +483,27 @@ def _generate_quote(*, brand_id, issued_date, valid_until,
             )
         else:
             st.button("📑 PDF 사용 불가", disabled=True, use_container_width=True)
+
+
+def _preview_quote(**kwargs):
+    result = _build_quote_artifacts(status_label="미리보기 생성 중...", **kwargs)
+    if result is None:
+        return
+    document_id, _docx_bytes, pdf_bytes = result
+
+    if not pdf_bytes:
+        st.error("❌ PDF 변환기(LibreOffice)를 사용할 수 없어 미리보기를 표시할 수 없습니다.")
+        return
+
+    st.success(f"미리보기: **{document_id}.pdf** — 아래에서 확인하세요.")
+    b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+    pdf_iframe = (
+        f'<iframe src="data:application/pdf;base64,{b64}" '
+        f'width="100%" height="900" style="border:1px solid #ddd;border-radius:6px;" '
+        f'type="application/pdf"></iframe>'
+    )
+    st.components.v1.html(pdf_iframe, height=920)
+    st.caption("💡 미리보기는 화면 표시용입니다. 실제 파일을 받으려면 '📝 견적서 생성' 버튼을 누르세요.")
 
 
 # ═════════════════════════════════════════════════════════════
