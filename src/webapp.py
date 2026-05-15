@@ -112,16 +112,19 @@ def _save_labels(labels_dict: dict) -> None:
 # 페이지 1: 견적서 작성
 # ═════════════════════════════════════════════════════════════
 
-ITEM_COLUMNS = ["품목", "설명", "수량", "기간(회)", "단가", "비고"]
+# 편집 가능 컬럼 (공급가는 계산 결과라 별도)
+ITEM_COLUMNS = ["항목", "설명", "단가", "기간(횟수)", "수량", "비고"]
+# 화면 표시 순서 (공급가 포함)
+DISPLAY_COLUMNS = ["항목", "설명", "단가", "기간(횟수)", "수량", "공급가", "비고"]
 
 
 def _empty_items_df() -> pd.DataFrame:
     return pd.DataFrame(columns=ITEM_COLUMNS).astype({
-        "품목": "string",
+        "항목": "string",
         "설명": "string",
-        "수량": "Int64",
-        "기간(회)": "Int64",
         "단가": "Int64",
+        "기간(횟수)": "Int64",
+        "수량": "Int64",
         "비고": "string",
     })
 
@@ -133,11 +136,11 @@ def _ensure_items_state():
 
 def _add_catalog_row(product: dict):
     new_row = {
-        "품목": product["name"],
+        "항목": product["name"],
         "설명": product.get("description", ""),
-        "수량": 1,
-        "기간(회)": 1,
         "단가": int(product.get("unit_price", 0)),
+        "기간(횟수)": 1,
+        "수량": 1,
         "비고": "",
     }
     df = st.session_state.items_df
@@ -158,17 +161,20 @@ def _reset_items():
     st.session_state.items_df = _empty_items_df()
 
 
-def _row_amount(row) -> int:
+def _row_amount(row):
+    """행의 공급가 계산. 입력이 전혀 없으면 None (빈 표시)."""
     qty = row.get("수량")
-    period = row.get("기간(회)")
+    period = row.get("기간(횟수)")
     price = row.get("단가")
+    # 단가가 비어있으면 계산 불가 → 빈 칸
+    if not (pd.notna(price) and price):
+        return None
     q = qty if pd.notna(qty) and qty else 1
     p = period if pd.notna(period) and period else 1
-    pr = price if pd.notna(price) and price else 0
     try:
-        return int(q) * int(p) * int(pr)
+        return int(q) * int(p) * int(price)
     except (TypeError, ValueError):
-        return 0
+        return None
 
 
 def render_quote_page():
@@ -304,15 +310,24 @@ def render_quote_page():
         st.info("아직 품목이 없습니다. 위 드롭다운에서 카탈로그 상품을 추가하거나 '+ 빈 행' 을 누르세요.")
         edited_df = st.session_state.items_df
     else:
+        # 공급가 컬럼을 계산해서 디스플레이용 DataFrame 생성
+        display_df = st.session_state.items_df.copy()
+        display_df["공급가"] = display_df.apply(_row_amount, axis=1).astype("Int64")
+        display_df = display_df[DISPLAY_COLUMNS]
+
         edited_df = st.data_editor(
-            st.session_state.items_df,
+            display_df,
             column_config={
-                "품목": st.column_config.TextColumn("품목", required=True),
+                "항목": st.column_config.TextColumn("항목", required=True),
                 "설명": st.column_config.TextColumn("설명"),
-                "수량": st.column_config.NumberColumn("수량", min_value=0, step=1),
-                "기간(회)": st.column_config.NumberColumn("기간(회)", min_value=0, step=1),
                 "단가": st.column_config.NumberColumn("단가", min_value=0, step=1000,
                                                       format="₩%d"),
+                "기간(횟수)": st.column_config.NumberColumn("기간(횟수)", min_value=0, step=1),
+                "수량": st.column_config.NumberColumn("수량", min_value=0, step=1),
+                "공급가": st.column_config.NumberColumn(
+                    "공급가", disabled=True, format="₩%d",
+                    help="수량 × 기간(횟수) × 단가 (자동 계산)",
+                ),
                 "비고": st.column_config.TextColumn("비고"),
             },
             num_rows="dynamic",
@@ -320,11 +335,24 @@ def render_quote_page():
             hide_index=True,
             key="items_editor",
         )
-        st.session_state.items_df = edited_df
+        # 편집 가능 컬럼만 세션에 저장
+        edited_core = edited_df[ITEM_COLUMNS]
+        # 공급가가 입력 변경에 따라 즉시 갱신되도록 — 변경 감지 시 rerun
+        old = st.session_state.items_df.reset_index(drop=True)
+        new = edited_core.reset_index(drop=True)
+        changed = (
+            len(old) != len(new) or
+            not all((old[c].astype(object).fillna("__").tolist()
+                     == new[c].astype(object).fillna("__").tolist())
+                    for c in ITEM_COLUMNS)
+        )
+        st.session_state.items_df = edited_core
+        if changed:
+            st.rerun()
 
     if not edited_df.empty:
         amounts = edited_df.apply(_row_amount, axis=1)
-        subtotal = int(amounts.sum())
+        subtotal = int(pd.to_numeric(amounts, errors="coerce").fillna(0).sum())
         vat_rate = labels.quote.vat_rate
         vat = int(round(subtotal * vat_rate))
         total = subtotal + vat
@@ -433,12 +461,12 @@ def _build_quote_artifacts(*, brand_id, issued_date, valid_until,
 
     items: list[LineItem] = []
     for _, row in items_df.iterrows():
-        name = row.get("품목")
+        name = row.get("항목")
         name = name.strip() if isinstance(name, str) else None
         if not name:
             continue
         qty = row.get("수량")
-        period = row.get("기간(회)")
+        period = row.get("기간(횟수)")
         unit_price = row.get("단가") or 0
         desc_val = row.get("설명")
         notes_val = row.get("비고")

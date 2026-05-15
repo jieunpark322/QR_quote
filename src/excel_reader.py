@@ -83,10 +83,11 @@ def read_quote_from_excel(xlsx_path: Path, project_root: Path) -> QuoteDocument:
         if not name:
             continue
 
+        # 컬럼 매핑: A:항목 B:설명 C:단가 D:기간(횟수) E:수량 F:공급가 G:비고
         raw_desc = ws.cell(row=row, column=2).value
-        raw_qty = ws.cell(row=row, column=3).value
+        raw_price = ws.cell(row=row, column=3).value
         raw_period = ws.cell(row=row, column=4).value
-        raw_price = ws.cell(row=row, column=5).value
+        raw_qty = ws.cell(row=row, column=5).value
         raw_notes = ws.cell(row=row, column=7).value
 
         desc = _to_str(raw_desc)

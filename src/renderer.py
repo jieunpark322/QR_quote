@@ -273,6 +273,7 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
     font = brand.branding.font_family
     primary_hex = brand.branding.colors.primary.lstrip("#")
     ql = labels.quote
+    items = document.line_items
 
     if ql.labels.vat_separate_notice:
         vat_label_p = doc.add_paragraph()
@@ -284,18 +285,55 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
                     color=RGBColor(0x99, 0x33, 0x33))
 
     th = ql.table_headers
-    headers = [th.name, th.description, th.qty, th.period, th.unit_price, th.amount, th.notes]
-    table = doc.add_table(rows=1 + len(document.line_items), cols=len(headers))
+    LEFT = WD_ALIGN_PARAGRAPH.LEFT
+    CENTER = WD_ALIGN_PARAGRAPH.CENTER
+    RIGHT = WD_ALIGN_PARAGRAPH.RIGHT
+
+    # 컬럼 정의 — 새 순서: 항목·설명·단가·기간(횟수)·수량·공급가·비고
+    # 각 컬럼: (key, header, base_width_cm, align, value_getter, always_show, has_data_check)
+    all_columns = [
+        ("name", th.name, 3.2, LEFT,
+         lambda i: i.name or "", True, None),
+        ("description", th.description, 3.2, LEFT,
+         lambda i: i.description or "", False,
+         lambda its: any((i.description or "").strip() for i in its)),
+        ("unit_price", th.unit_price, 2.4, RIGHT,
+         lambda i: _format_money(i.unit_price, i.currency), True, None),
+        ("period", th.period, 1.4, CENTER,
+         lambda i: f"{i.period:g}" if (i.period is not None and i.period) else "",
+         False,
+         lambda its: any((i.period is not None and i.period and i.period != 0) for i in its)),
+        ("qty", th.qty, 1.2, CENTER,
+         lambda i: f"{i.qty:g}" if i.qty is not None else "", True, None),
+        ("amount", th.amount, 2.8, RIGHT,
+         lambda i: _format_money(i.amount, i.currency), True, None),
+        ("notes", th.notes, 3.2, LEFT,
+         lambda i: i.notes or "", False,
+         lambda its: any((i.notes or "").strip() for i in its)),
+    ]
+
+    # 활성 컬럼 필터링 (설명·기간·비고 중 모든 행이 비어있으면 숨김)
+    active_cols = [
+        c for c in all_columns
+        if c[5] or (c[6] is not None and c[6](items))
+    ]
+
+    # 사용 가능 너비(17.4cm)에 맞춰 비례 재분배
+    USABLE_WIDTH = 17.4
+    total_base = sum(c[2] for c in active_cols)
+    scale = USABLE_WIDTH / total_base
+    widths = [Cm(c[2] * scale) for c in active_cols]
+    headers = [c[1] for c in active_cols]
+
+    table = doc.add_table(rows=1 + len(items), cols=len(headers))
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     _set_table_borders(table, color="9FB0CC", size=4)
 
-    widths = [Cm(3.2), Cm(3.0), Cm(1.0), Cm(1.2), Cm(2.3), Cm(2.7), Cm(4.0)]
-
+    # 헤더 행
     header_row = table.rows[0]
-    # 헤더 행 높이 명시 → vAlign center 강제
     header_row.height = Cm(0.8)
     header_row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
-    for idx, (header, width) in enumerate(zip(headers, widths)):
+    for idx, (col_spec, width) in enumerate(zip(active_cols, widths)):
         cell = header_row.cells[idx]
         cell.width = width
         _vcenter(cell)
@@ -304,33 +342,24 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(0)
-        r = p.add_run(header)
+        r = p.add_run(col_spec[1])
         _apply_font(r, font, size_pt=9.5, bold=True, color=RGBColor(0xFF, 0xFF, 0xFF))
 
-    for r_idx, item in enumerate(document.line_items, start=1):
+    # 데이터 행
+    for r_idx, item in enumerate(items, start=1):
         row_obj = table.rows[r_idx]
-        # 명시적 row 높이 부여 (vAlign center가 LibreOffice에서 동작하도록)
         row_obj.height = Cm(1.0)
         row_obj.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-        row = row_obj.cells
-        qty_text = f"{item.qty:g}" if item.qty is not None else ""
-        period_text = f"{item.period:g}" if item.period is not None else ""
-        for c_idx, (text, align) in enumerate([
-            (item.name, WD_ALIGN_PARAGRAPH.LEFT),
-            (item.description or "", WD_ALIGN_PARAGRAPH.LEFT),
-            (qty_text, WD_ALIGN_PARAGRAPH.CENTER),
-            (period_text, WD_ALIGN_PARAGRAPH.CENTER),
-            (_format_money(item.unit_price, item.currency), WD_ALIGN_PARAGRAPH.RIGHT),
-            (_format_money(item.amount, item.currency), WD_ALIGN_PARAGRAPH.RIGHT),
-            (item.notes or "", WD_ALIGN_PARAGRAPH.LEFT),
-        ]):
-            cell = row[c_idx]
-            cell.width = widths[c_idx]
+        for c_idx, (col_spec, width) in enumerate(zip(active_cols, widths)):
+            _, _, _, align, getter, _, _ = col_spec
+            cell = row_obj.cells[c_idx]
+            cell.width = width
             _vcenter(cell)
             p = cell.paragraphs[0]
             p.alignment = align
+            p.paragraph_format.space_before = Pt(0)
             p.paragraph_format.space_after = Pt(0)
-            run = p.add_run(text)
+            run = p.add_run(getter(item))
             _apply_font(run, font, size_pt=9)
 
 

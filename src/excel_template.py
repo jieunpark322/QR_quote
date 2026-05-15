@@ -47,7 +47,8 @@ def _load_products(catalog_path: Path) -> list[dict]:
 
 
 def _set_column_widths(ws) -> None:
-    widths = {"A": 22, "B": 28, "C": 8, "D": 10, "E": 14, "F": 16, "G": 20}
+    # A:항목, B:설명, C:단가, D:기간(횟수), E:수량, F:공급가, G:비고
+    widths = {"A": 22, "B": 28, "C": 14, "D": 10, "E": 8, "F": 16, "G": 20}
     for col, w in widths.items():
         ws.column_dimensions[col].width = w
 
@@ -199,7 +200,8 @@ def _build_quote_sheet(wb: Workbook, products: list[dict],
     _section_header(ws, 19, "■ 품목 내역  (드롭다운 선택 또는 직접 입력 모두 가능)")
 
     th = labels.quote.table_headers
-    headers = [th.name, th.description, th.qty, th.period, th.unit_price, th.amount, th.notes]
+    # 컬럼 순서: 항목·설명·단가·기간(횟수)·수량·공급가·비고
+    headers = [th.name, th.description, th.unit_price, th.period, th.qty, th.amount, th.notes]
     header_row = 20
     for col, h in enumerate(headers, start=1):
         c = ws.cell(row=header_row, column=col)
@@ -229,45 +231,45 @@ def _build_quote_sheet(wb: Workbook, products: list[dict],
     dv.add(dv_target)
 
     for row in range(ITEM_START_ROW, ITEM_END_ROW + 1):
-        # A: 품목 (드롭다운)
+        # A: 항목 (드롭다운)
         c = ws.cell(row=row, column=1)
         c.font = Font(name="맑은 고딕", size=10)
         c.alignment = Alignment(vertical="center", horizontal="left", indent=1, wrap_text=True)
         c.border = _thin_border()
 
-        # B: 설명 (VLOOKUP, 수정 가능)
+        # B: 설명 (VLOOKUP col 2, 수정 가능)
         c = ws.cell(row=row, column=2)
         c.value = f'=IFERROR(VLOOKUP(A{row},{catalog_lookup},2,FALSE),"")'
         c.font = Font(name="맑은 고딕", size=10)
         c.alignment = Alignment(vertical="center", horizontal="left", indent=1, wrap_text=True)
         c.border = _thin_border()
 
-        # C: 수량
+        # C: 단가 (VLOOKUP col 3, 수정 가능)
         c = ws.cell(row=row, column=3)
-        c.font = Font(name="맑은 고딕", size=10)
-        c.alignment = Alignment(vertical="center", horizontal="center")
-        c.border = _thin_border()
-        c.number_format = '#,##0'
-
-        # D: 기간(회)
-        c = ws.cell(row=row, column=4)
-        c.font = Font(name="맑은 고딕", size=10)
-        c.alignment = Alignment(vertical="center", horizontal="center")
-        c.border = _thin_border()
-        c.number_format = '#,##0'
-
-        # E: 단가 (VLOOKUP, 수정 가능)
-        c = ws.cell(row=row, column=5)
         c.value = f'=IFERROR(VLOOKUP(A{row},{catalog_lookup},3,FALSE),0)'
         c.font = Font(name="맑은 고딕", size=10)
         c.alignment = Alignment(vertical="center", horizontal="right", indent=1)
         c.border = _thin_border()
         c.number_format = '#,##0'
 
-        # F: 금액 (= [수량 or 1] × [기간 or 1] × 단가). 단가가 비면 빈 칸.
+        # D: 기간(횟수)
+        c = ws.cell(row=row, column=4)
+        c.font = Font(name="맑은 고딕", size=10)
+        c.alignment = Alignment(vertical="center", horizontal="center")
+        c.border = _thin_border()
+        c.number_format = '#,##0'
+
+        # E: 수량
+        c = ws.cell(row=row, column=5)
+        c.font = Font(name="맑은 고딕", size=10)
+        c.alignment = Alignment(vertical="center", horizontal="center")
+        c.border = _thin_border()
+        c.number_format = '#,##0'
+
+        # F: 공급가 (= [수량 or 1] × [기간 or 1] × 단가). 단가가 비면 빈 칸.
         c = ws.cell(row=row, column=6)
-        c.value = (f'=IF(E{row}="","",'
-                   f'IF(C{row}="",1,C{row})*IF(D{row}="",1,D{row})*E{row})')
+        c.value = (f'=IF(C{row}="","",'
+                   f'IF(D{row}="",1,D{row})*IF(E{row}="",1,E{row})*C{row})')
         c.font = Font(name="맑은 고딕", size=10)
         c.alignment = Alignment(vertical="center", horizontal="right", indent=1)
         c.border = _thin_border()

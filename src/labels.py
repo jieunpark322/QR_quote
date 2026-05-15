@@ -21,12 +21,12 @@ class QuoteTextLabels(BaseModel):
 
 
 class QuoteTableHeaders(BaseModel):
-    name: str = "품목"
+    name: str = "항목"
     description: str = "설명"
     qty: str = "수량"
-    period: str = "기간(회)"
+    period: str = "기간(횟수)"
     unit_price: str = "단가"
-    amount: str = "금액"
+    amount: str = "공급가"
     notes: str = "비고"
 
 

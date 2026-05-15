@@ -77,8 +77,9 @@ class LineItem(BaseModel):
 
     @property
     def amount(self) -> float:
-        q = self.qty if self.qty is not None else 1
-        p = self.period if self.period is not None else 1
+        # 수량/기간이 None 또는 0(의미 없는 값) 이면 1로 처리
+        q = self.qty if (self.qty is not None and self.qty != 0) else 1
+        p = self.period if (self.period is not None and self.period != 0) else 1
         return q * p * self.unit_price
 
 
