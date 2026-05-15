@@ -208,40 +208,28 @@ def render_quote_page():
     st.title("📋 견적서 자동 생성")
     st.caption("폼을 채우고 '견적서 생성' 버튼을 누르면 DOCX/PDF 가 다운로드됩니다.")
 
-    # 브랜드 기본 담당자 정보 (오버라이드 입력의 기본값)
-    try:
-        _brand_for_defaults = load_brand(PROJECT_ROOT, brand_id)
-        _default_cp = _brand_for_defaults.contact_person
-    except Exception:
-        _default_cp = None
-
     st.subheader("0. 발행 담당자 정보")
     st.caption(
         "이번 견적서에 표시될 **소프트먼트 측 담당자** 정보입니다. "
-        "브랜드 기본값에서 자동으로 채워졌습니다 — 자주 바뀌면 여기서 매번 수정하세요. "
-        "(영구 변경은 ⚙ 설정 페이지에서)"
+        "비워두면 견적서에서 담당자 정보가 표시되지 않습니다."
     )
     ic1, ic2 = st.columns(2)
     with ic1:
         issuer_name = st.text_input(
             "담당자명", key="issuer_name",
-            value=(_default_cp.name if _default_cp else ""),
             placeholder="예: 박지은",
         )
         issuer_phone = st.text_input(
             "연락처", key="issuer_phone",
-            value=(_default_cp.phone if _default_cp and _default_cp.phone else ""),
             placeholder="예: 010-0000-0000",
         )
     with ic2:
         issuer_title = st.text_input(
             "직책", key="issuer_title",
-            value=(_default_cp.title if _default_cp and _default_cp.title else ""),
             placeholder="예: QR사업부 매니저",
         )
         issuer_email = st.text_input(
             "이메일", key="issuer_email",
-            value=(_default_cp.email if _default_cp and _default_cp.email else ""),
             placeholder="예: name@softment.co.kr",
         )
 
