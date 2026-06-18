@@ -225,11 +225,23 @@ def _qr_apply_snapshot(payload: dict) -> None:
 
 
 def _qr_save_history(snapshot: dict, document_id: str) -> None:
-    """견적서 생성 직후 히스토리에 저장. 오래된 것은 정리."""
+    """견적서 생성/미리보기 직후 히스토리에 저장.
+
+    같은 document_id 인 기존 파일은 모두 제거 → DOCX/PDF 또는 미리보기/생성에서
+    중복으로 쌓이지 않고 항상 1개만 유지 (최신 입력 반영).
+    """
     QR_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
     from datetime import datetime
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_id = "".join(c for c in document_id if c.isalnum() or c in "-_")[:40]
+
+    # 같은 document_id 기존 파일 모두 제거 (중복 방지)
+    for old in QR_HISTORY_DIR.glob(f"*_{safe_id}.json"):
+        try:
+            old.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     payload = {
         **snapshot,
         "_document_id": document_id,
@@ -239,7 +251,7 @@ def _qr_save_history(snapshot: dict, document_id: str) -> None:
     }
     path = QR_HISTORY_DIR / f"{ts}_{safe_id}.json"
     _write_json_safe(path, payload)
-    # 오래된 히스토리 정리
+    # 오래된 히스토리 정리 (HISTORY_LIMIT 초과분 삭제)
     files = sorted(QR_HISTORY_DIR.glob("*.json"),
                    key=lambda p: p.stat().st_mtime, reverse=True)
     for old in files[HISTORY_LIMIT:]:
@@ -328,16 +340,18 @@ def _inject_beforeunload(active: bool) -> None:
 
 
 def _render_qr_recent_panel() -> None:
-    """📂 최근 견적서 — 자동 기록된 최근 10개 견적서를 불러와 이어서 편집."""
+    """📂 최근 다운로드 견적서 — 생성/미리보기한 최근 10개를 불러와 이어서 편집."""
     history = _qr_list_history()
-    label = f"📂 최근 견적서 ({len(history)})" if history else "📂 최근 견적서"
+    label = (f"📂 최근 다운로드 견적서 ({len(history)})"
+             if history else "📂 최근 다운로드 견적서")
     with st.expander(label, expanded=False):
         st.caption(
-            "견적서를 생성하면 자동으로 **최근 10개**가 보관됩니다. "
+            "견적서 **생성** 또는 **미리보기** 를 누르면 자동으로 **최근 10개**가 보관됩니다. "
+            "같은 견적서를 DOCX·PDF 둘 다 받아도 한 건으로만 남고, "
             "오타나 누락이 있을 때 다시 불러와 이어서 편집할 수 있어요."
         )
         if not history:
-            st.caption("아직 생성한 견적서가 없습니다.")
+            st.caption("아직 생성/미리보기한 견적서가 없습니다.")
             return
 
         options = list(range(len(history)))
@@ -693,7 +707,7 @@ def render_quote_page():
     st.title("📋 견적서 자동 생성")
     st.caption("폼을 채우고 '견적서 생성' 버튼을 누르면 DOCX/PDF 가 다운로드됩니다.")
 
-    # ─── 최근 견적서 (자동 기록) ───
+    # ─── 최근 다운로드 견적서 (자동 기록) ───
     _render_qr_recent_panel()
     # ─── 견적서 표본 (수기 저장된 정석 케이스) ───
     _render_qr_template_panel()
@@ -1186,7 +1200,7 @@ def _generate_quote(**kwargs):
         return
     document_id, docx_bytes, pdf_bytes = result
 
-    # 최근 견적서 히스토리에 저장 (입력 데이터 그대로 복원 가능)
+    # 최근 다운로드 견적서 히스토리에 저장 (같은 document_id 면 1개로 유지)
     _qr_save_history(_qr_snapshot_payload(), document_id)
 
     dl1, dl2 = st.columns(2)
@@ -1217,6 +1231,10 @@ def _preview_quote(**kwargs):
     if not pdf_bytes:
         st.error("❌ PDF 변환기(LibreOffice)를 사용할 수 없어 미리보기를 표시할 수 없습니다.")
         return
+
+    # 미리보기에서 다운로드한 경우도 히스토리에 남도록 저장
+    # (같은 document_id 면 중복 없이 1개로 갱신)
+    _qr_save_history(_qr_snapshot_payload(), document_id)
 
     st.success(f"미리보기: **{document_id}.pdf**")
 
