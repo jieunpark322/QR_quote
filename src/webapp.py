@@ -664,40 +664,51 @@ def render_quote_page():
         "이번 견적서에 표시될 **소프트먼트 측 담당자** 정보입니다. "
         "비워두면 견적서에서 담당자 정보가 표시되지 않습니다."
     )
-    ic1, ic2 = st.columns(2)
-    with ic1:
+    # Tab 키가 좌→우→다음 줄 순으로 이동하도록 행 단위로 columns 를 생성
+    ic_r1_l, ic_r1_r = st.columns(2)
+    with ic_r1_l:
         issuer_name = st.text_input(
             "담당자명", key="issuer_name",
             placeholder="예: 박지은",
         )
-        issuer_phone = st.text_input(
-            "연락처", key="issuer_phone",
-            placeholder="예: 010-0000-0000",
-        )
-    with ic2:
+    with ic_r1_r:
         issuer_title = st.text_input(
             "직책", key="issuer_title",
             placeholder="예: QR사업부 매니저",
         )
+    ic_r2_l, ic_r2_r = st.columns(2)
+    with ic_r2_l:
+        issuer_phone = st.text_input(
+            "연락처", key="issuer_phone",
+            placeholder="예: 010-0000-0000",
+        )
+    with ic_r2_r:
         issuer_email = st.text_input(
             "이메일", key="issuer_email",
             placeholder="예: name@softment.co.kr",
         )
 
     st.subheader("1. 수신처 정보")
-    cp_col1, cp_col2 = st.columns(2)
-    with cp_col1:
+    # Tab 이 좌→우→다음 줄 순으로 이동하도록 행 단위 columns
+    cp_r1_l, cp_r1_r = st.columns(2)
+    with cp_r1_l:
         cp_name = st.text_input("회사명 *", key="cp_name",
                                 placeholder="예: 주식회사 ○○")
-        cp_reg = st.text_input("사업자등록번호", key="cp_reg",
-                               placeholder="000-00-00000")
-        cp_address = st.text_input("주소", key="cp_address",
-                                   placeholder="시/도 ○○구 ○○로 ...")
-    with cp_col2:
+    with cp_r1_r:
         cp_contact_name = st.text_input("담당자", key="cp_contact_name",
                                         placeholder="예: 김담당")
+    cp_r2_l, cp_r2_r = st.columns(2)
+    with cp_r2_l:
+        cp_reg = st.text_input("사업자등록번호", key="cp_reg",
+                               placeholder="000-00-00000")
+    with cp_r2_r:
         cp_contact_title = st.text_input("직책", key="cp_contact_title",
                                          placeholder="예: 구매팀장")
+    cp_r3_l, cp_r3_r = st.columns(2)
+    with cp_r3_l:
+        cp_address = st.text_input("주소", key="cp_address",
+                                   placeholder="시/도 ○○구 ○○로 ...")
+    with cp_r3_r:
         cp_email = st.text_input("Email", key="cp_email",
                                  placeholder="buyer@example.com")
 
@@ -1936,24 +1947,28 @@ def render_membership_quote_page():
 
     st.subheader("0. 발행 담당자 정보")
     st.caption("이 견적서를 발행하는 우리 쪽 담당자. 회사(우리)의 '담당자/연락처/이메일' 칸에 표시됩니다.")
-    ic1, ic2 = st.columns(2)
-    with ic1:
+    # Tab 좌→우→다음 줄 순으로 이동하도록 행 단위 columns
+    ic_r1_l, ic_r1_r = st.columns(2)
+    with ic_r1_l:
         issuer_name = st.text_input(
             "담당자명", key="mc_issuer_name",
             value=(_default_cp.name if _default_cp else ""),
             placeholder="예: 박지은",
         )
-        issuer_phone = st.text_input(
-            "연락처", key="mc_issuer_phone",
-            value=(_default_cp.phone if _default_cp and _default_cp.phone else ""),
-            placeholder="예: 010-0000-0000",
-        )
-    with ic2:
+    with ic_r1_r:
         issuer_title = st.text_input(
             "직책", key="mc_issuer_title",
             value=(_default_cp.title if _default_cp and _default_cp.title else ""),
             placeholder="예: QR사업부 매니저",
         )
+    ic_r2_l, ic_r2_r = st.columns(2)
+    with ic_r2_l:
+        issuer_phone = st.text_input(
+            "연락처", key="mc_issuer_phone",
+            value=(_default_cp.phone if _default_cp and _default_cp.phone else ""),
+            placeholder="예: 010-0000-0000",
+        )
+    with ic_r2_r:
         issuer_email = st.text_input(
             "이메일", key="mc_issuer_email",
             value=(_default_cp.email if _default_cp and _default_cp.email else ""),
@@ -1968,21 +1983,25 @@ def render_membership_quote_page():
     # supplier 는 PDF 렌더 시 brand.json 에서 자동 채워지므로 폼에서 제거
     state["supplier"] = None
 
-    pc1, pc2 = st.columns(2)
-    with pc1:
+    # Tab 좌→우→다음 줄 순으로
+    pc_r1_l, pc_r1_r = st.columns(2)
+    with pc_r1_l:
         cp["name"] = st.text_input(
             "회사명 *", value=cp.get("name") or "", key="mc_cp_name",
             placeholder="예: 주식회사 ○○",
         )
-        cp["ceo"] = st.text_input(
-            "대표이사", value=cp.get("ceo") or "", key="mc_cp_ceo",
-            placeholder="예: 홍길동",
-        )
-    with pc2:
+    with pc_r1_r:
         cp["address"] = st.text_input(
             "주소", value=cp.get("address") or "", key="mc_cp_addr",
             placeholder="예: 서울특별시 ○○구 ○○로 ○○",
         )
+    pc_r2_l, pc_r2_r = st.columns(2)
+    with pc_r2_l:
+        cp["ceo"] = st.text_input(
+            "대표이사", value=cp.get("ceo") or "", key="mc_cp_ceo",
+            placeholder="예: 홍길동",
+        )
+    with pc_r2_r:
         cp["contact"] = st.text_input(
             "담당자", value=cp.get("contact") or "", key="mc_cp_contact",
             placeholder="예: 김담당 (구매팀장)",
