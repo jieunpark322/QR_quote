@@ -548,18 +548,18 @@ def _add_blank_row():
 
 
 def _add_discount_row():
-    """할인 행 추가 — 분류 '💰 할인'. 단가는 양수 입력 시 자동 차감."""
+    """할인 행 추가 — 분류 '💰 할인'. 단가(고정금액) 또는 할인율(%)(일괄) 둘 다 사용 가능."""
     df = st.session_state.items_df
     new_row = {
         "분류": ITEM_KIND_DISCOUNT,
         "항목": "할인",
-        "설명": "협상가",
-        "단가": 500000,
+        "설명": "단가(고정금액) 또는 할인율(%)(일괄) 입력",
+        "단가": None,
         "기간(횟수)": None,
-        "수량": 1,
+        "수량": None,
         "할인율(%)": None,
         "할인금액": None,
-        "비고": "협상에 따라 단가 조정",
+        "비고": "협상가",
     }
     st.session_state.items_df = pd.concat(
         [df, pd.DataFrame([new_row])], ignore_index=True,
@@ -574,8 +574,8 @@ def _reset_items():
     _qr_autosave_clear()
 
 
-def _row_amount(row):
-    """행의 공급가 계산 (할인 반영). 입력이 전혀 없으면 None."""
+def _row_amount_normal(row) -> int | None:
+    """일반 품목 행 한 줄의 공급가 (항목별 할인 반영). 단가 없으면 None."""
     qty = row.get("수량")
     period = row.get("기간(횟수)")
     price = row.get("단가")
@@ -587,10 +587,6 @@ def _row_amount(row):
         gross = int(q) * int(p) * int(price)
     except (TypeError, ValueError):
         return None
-    # 분류='💰 할인' 이면 무조건 차감 (양수 입력도 음수 처리)
-    if row.get("분류") == ITEM_KIND_DISCOUNT:
-        return -abs(gross)
-    # 일반 항목별 할인: 할인금액 > 할인율
     disc_amt = row.get("할인금액")
     disc_rate = row.get("할인율(%)")
     discount = 0
@@ -605,6 +601,64 @@ def _row_amount(row):
         except (TypeError, ValueError):
             discount = 0
     return gross - discount
+
+
+def _normal_items_sum(df) -> int:
+    """일반(품목) 분류 행들의 amount 합 — 할인 행의 일괄 할인 기준값."""
+    if df is None:
+        return 0
+    total = 0
+    for _, row in df.iterrows():
+        if row.get("분류") == ITEM_KIND_DISCOUNT:
+            continue
+        a = _row_amount_normal(row)
+        if a is not None:
+            total += a
+    return total
+
+
+def _row_amount(row, df=None):
+    """행의 공급가 계산.
+
+    - 분류='📋 품목': (수량×기간×단가) − 항목별 할인
+    - 분류='💰 할인':
+        * '할인율(%)' 입력 → 다른 품목 합의 % 만큼 일괄 차감 (전체 일괄 할인)
+        * '단가' 또는 '할인금액' 입력 → 그 금액만큼 차감 (고정 할인)
+        * 두 가지 모두 입력되면 합산 차감
+    """
+    if row.get("분류") != ITEM_KIND_DISCOUNT:
+        return _row_amount_normal(row)
+
+    deduct = 0
+    # 1) 단가 × 수량 × 기간 (고정 금액 차감)
+    qty = row.get("수량")
+    period = row.get("기간(횟수)")
+    price = row.get("단가")
+    if pd.notna(price) and price:
+        q = qty if pd.notna(qty) and qty else 1
+        p = period if pd.notna(period) and period else 1
+        try:
+            deduct += int(q) * int(p) * abs(int(price))
+        except (TypeError, ValueError):
+            pass
+    # 2) 할인금액 (별도 컬럼)
+    disc_amt = row.get("할인금액")
+    if pd.notna(disc_amt) and disc_amt:
+        try:
+            deduct += abs(int(disc_amt))
+        except (TypeError, ValueError):
+            pass
+    # 3) 할인율(%) → 다른 품목 합의 N% 만큼 일괄 차감
+    disc_rate = row.get("할인율(%)")
+    if pd.notna(disc_rate) and disc_rate:
+        try:
+            base = _normal_items_sum(df) if df is not None else 0
+            deduct += int(round(base * float(disc_rate) / 100))
+        except (TypeError, ValueError):
+            pass
+    if deduct == 0:
+        return None
+    return -deduct
 
 
 def render_quote_page():
@@ -704,8 +758,9 @@ def render_quote_page():
 
     st.subheader("3. 품목 내역")
     st.caption(
-        "💡 카탈로그 선택 또는 '+ 빈 행' 으로 추가. 할인은 **'+ 할인 행'** 으로 "
-        "음수 단가 행이 자동 추가됩니다. 표 셀을 클릭해 수정 가능합니다."
+        "💡 카탈로그 선택 또는 '+ 빈 행' 으로 추가. 할인은 **'+ 할인 행'** 클릭. "
+        "할인 행에는 **단가** 또는 **할인율(%)** 입력 — **할인율(%)** 은 일반 품목 "
+        "합계의 N% 만큼 일괄 차감됩니다."
     )
 
     pick_col, add_col, blank_col, disc_col, reset_col = st.columns([5, 1.2, 1.2, 1.2, 1.2])
@@ -793,7 +848,9 @@ def render_quote_page():
         display_df = st.session_state.items_df.copy()
         # 분류 값이 비었으면 기본 '품목'으로 채움
         display_df["분류"] = display_df["분류"].fillna(ITEM_KIND_NORMAL).replace("", ITEM_KIND_NORMAL)
-        display_df["공급가"] = display_df.apply(_row_amount, axis=1).astype("Int64")
+        display_df["공급가"] = display_df.apply(
+            lambda r: _row_amount(r, df=display_df), axis=1
+        ).astype("Int64")
         display_df = display_df[DISPLAY_COLUMNS]
 
         edited_df = st.data_editor(
@@ -818,11 +875,12 @@ def render_quote_page():
                 "할인율(%)": st.column_config.NumberColumn(
                     "할인율(%)", min_value=0, max_value=100, step=1, format="%d%%",
                     width="small",
-                    help="항목별 할인율 (0~100). 할인금액이 입력되면 할인금액이 우선됩니다.",
+                    help=("일반 품목 행: 그 행에만 적용되는 할인율 (할인금액이 있으면 그쪽 우선). "
+                          "💰 할인 행: 일반 품목 합계의 N% 만큼 일괄 차감."),
                 ),
                 "할인금액": st.column_config.NumberColumn(
                     "할인금액", min_value=0, step=1000, format="₩%,d", width="small",
-                    help="항목별 할인 금액 (양수). 비워두면 할인율이 적용됩니다.",
+                    help="항목별 할인 금액 (양수).",
                 ),
                 "공급가": st.column_config.NumberColumn(
                     "공급가", disabled=True, format="₩%,d", width="small",
@@ -854,7 +912,9 @@ def render_quote_page():
         disc_mask = edited_df["분류"].astype(str) == ITEM_KIND_DISCOUNT
         disc_rows = edited_df[disc_mask]
         if not disc_rows.empty:
-            disc_amounts = disc_rows.apply(_row_amount, axis=1)
+            disc_amounts = disc_rows.apply(
+                lambda r: _row_amount(r, df=edited_df), axis=1
+            )
             disc_total = int(pd.to_numeric(disc_amounts, errors="coerce").fillna(0).sum())
             st.markdown(
                 f"""
@@ -882,39 +942,22 @@ def render_quote_page():
             )
 
     if not edited_df.empty:
-        amounts = edited_df.apply(_row_amount, axis=1)
-        items_sum = int(pd.to_numeric(amounts, errors="coerce").fillna(0).sum())
+        amounts = edited_df.apply(
+            lambda r: _row_amount(r, df=edited_df), axis=1
+        )
+        subtotal = int(pd.to_numeric(amounts, errors="coerce").fillna(0).sum())
 
         st.divider()
         st.caption("📊 **공급가액 · 부가세 · 합계 금액**")
-        td_col, _ = st.columns([1, 3])
-        with td_col:
-            total_discount_pct = st.number_input(
-                "전체 일괄 할인율 (%)",
-                min_value=0, max_value=100, step=1,
-                value=int(st.session_state.get("total_discount_pct", 0)),
-                key="total_discount_pct",
-                help="공급가액에 일괄 적용되는 할인율 (항목별 할인은 별도 행에서 적용).",
-            )
-        total_discount_value = int(round(items_sum * total_discount_pct / 100))
-        subtotal = items_sum - total_discount_value
 
         vat_rate = labels.quote.vat_rate
         vat = int(round(subtotal * vat_rate))
         total = subtotal + vat
 
-        if total_discount_pct > 0:
-            m0, m1, m2, m3 = st.columns(4)
-            m0.metric("일괄 할인", f"-₩{total_discount_value:,}",
-                      delta=f"{total_discount_pct}%", delta_color="inverse")
-            m1.metric("공급가액", f"₩{subtotal:,}")
-            m2.metric(f"부가세 ({int(vat_rate * 100)}%)", f"₩{vat:,}")
-            m3.metric("합계 금액", f"₩{total:,}")
-        else:
-            m1, m2, m3 = st.columns(3)
-            m1.metric("공급가액", f"₩{subtotal:,}")
-            m2.metric(f"부가세 ({int(vat_rate * 100)}%)", f"₩{vat:,}")
-            m3.metric("합계 금액", f"₩{total:,}")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("공급가액", f"₩{subtotal:,}")
+        m2.metric(f"부가세 ({int(vat_rate * 100)}%)", f"₩{vat:,}")
+        m3.metric("합계 금액", f"₩{total:,}")
 
     st.subheader("4. 기타 안내 (선택)")
     notes = st.text_area(
@@ -952,11 +995,6 @@ def render_quote_page():
         items_df=edited_df,
         notes=notes.strip() or None,
         soffice_available=soffice_available,
-        total_discount_rate=(
-            float(st.session_state.get("total_discount_pct", 0)) / 100
-            if int(st.session_state.get("total_discount_pct", 0) or 0) > 0
-            else None
-        ),
     )
 
     btn_prev, btn_gen = st.columns([1, 1])
@@ -1015,7 +1053,7 @@ def _compute_auto_notice_lines(brand_id: str, valid_until: date,
 def _build_quote_artifacts(*, brand_id, issued_date, valid_until,
                            counterparty_data, issuer_contact_data,
                            subject, items_df, notes,
-                           soffice_available, total_discount_rate=None,
+                           soffice_available,
                            status_label="문서 생성 중..."):
     """입력값을 검증·렌더링하여 (document_id, docx_bytes, pdf_bytes) 를 반환.
     실패 시 None 반환 (사용자에게 에러는 이미 표시됨)."""
@@ -1026,6 +1064,9 @@ def _build_quote_artifacts(*, brand_id, issued_date, valid_until,
         st.error("❌ 건명은 필수입니다.")
         return None
 
+    # 할인 행의 일괄 할인율(%) 계산 기준값 — 일반 품목 행들의 amount 합
+    normal_sum = _normal_items_sum(items_df)
+
     items: list[LineItem] = []
     for _, row in items_df.iterrows():
         name = row.get("항목")
@@ -1034,29 +1075,48 @@ def _build_quote_artifacts(*, brand_id, issued_date, valid_until,
             continue
         qty = row.get("수량")
         period = row.get("기간(횟수)")
-        unit_price = float(row.get("단가") or 0)
+        unit_price_raw = row.get("단가")
         is_discount_row = row.get("분류") == ITEM_KIND_DISCOUNT
-        # 분류='💰 할인' 이면 단가 양수 입력도 음수로 강제 (자동 차감)
-        if is_discount_row:
-            unit_price = -abs(unit_price)
         desc_val = row.get("설명")
         notes_val = row.get("비고")
         disc_rate = row.get("할인율(%)")
         disc_amt = row.get("할인금액")
-        items.append(LineItem(
-            name=name,
-            description=desc_val if isinstance(desc_val, str) and desc_val else None,
-            qty=float(qty) if pd.notna(qty) and qty else None,
-            period=float(period) if pd.notna(period) and period else None,
-            unit_price=unit_price,
-            discount_rate=(float(disc_rate) / 100
-                           if pd.notna(disc_rate) and disc_rate
-                           and not is_discount_row else None),
-            discount_amount=(float(disc_amt)
-                             if pd.notna(disc_amt) and disc_amt
-                             and not is_discount_row else None),
-            notes=notes_val if isinstance(notes_val, str) and notes_val else None,
-        ))
+
+        if is_discount_row:
+            # 분류=할인: (단가×수량×기간 + 할인금액 + 일반품목합×할인율%) 만큼 음수 단가로 환산
+            deduct = 0.0
+            if pd.notna(unit_price_raw) and unit_price_raw:
+                q_v = float(qty) if pd.notna(qty) and qty else 1.0
+                p_v = float(period) if pd.notna(period) and period else 1.0
+                deduct += q_v * p_v * abs(float(unit_price_raw))
+            if pd.notna(disc_amt) and disc_amt:
+                deduct += abs(float(disc_amt))
+            if pd.notna(disc_rate) and disc_rate:
+                deduct += normal_sum * float(disc_rate) / 100.0
+            if deduct <= 0:
+                continue  # 차감 금액이 0이면 의미 없는 행 → skip
+            items.append(LineItem(
+                name=name,
+                description=desc_val if isinstance(desc_val, str) and desc_val else None,
+                qty=None, period=None,
+                unit_price=-deduct,
+                notes=notes_val if isinstance(notes_val, str) and notes_val else None,
+            ))
+        else:
+            # 일반 품목 행
+            unit_price = float(unit_price_raw or 0)
+            items.append(LineItem(
+                name=name,
+                description=desc_val if isinstance(desc_val, str) and desc_val else None,
+                qty=float(qty) if pd.notna(qty) and qty else None,
+                period=float(period) if pd.notna(period) and period else None,
+                unit_price=unit_price,
+                discount_rate=(float(disc_rate) / 100
+                               if pd.notna(disc_rate) and disc_rate else None),
+                discount_amount=(float(disc_amt)
+                                 if pd.notna(disc_amt) and disc_amt else None),
+                notes=notes_val if isinstance(notes_val, str) and notes_val else None,
+            ))
 
     if not items:
         st.error("❌ 최소 1개 이상의 품목을 입력해주세요.")
@@ -1071,7 +1131,6 @@ def _build_quote_artifacts(*, brand_id, issued_date, valid_until,
         issued_date=issued_date, valid_until=valid_until,
         counterparty=Counterparty(**counterparty_data),
         subject=subject, line_items=items,
-        total_discount_rate=total_discount_rate,
         totals=Totals(), clauses=[], notes=notes,
     )
 
