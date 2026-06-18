@@ -621,13 +621,21 @@ def _preview_quote(**kwargs):
 def render_catalog_page():
     st.title("📦 카탈로그 관리")
     st.caption(
-        "견적서 작성 화면의 '카탈로그 빠른 추가' 와 엑셀 템플릿의 드롭다운에 사용되는 상품 목록입니다. "
-        "행을 추가/수정/삭제 후 **저장** 버튼을 누르세요."
+        "견적서 작성 화면의 '카탈로그 빠른 추가' 드롭다운에 사용되는 상품 목록입니다. "
+        "탭으로 견적서 종류별로 관리할 수 있어요."
     )
 
+    tab_qr, tab_mc = st.tabs(["📋 QR 견적서 카탈로그", "🏢 멤버십 견적서 카탈로그"])
+    with tab_qr:
+        _render_qr_catalog_editor()
+    with tab_mc:
+        _render_membership_catalog_editor()
+
+
+def _render_qr_catalog_editor():
+    """QR 견적서용 평면 카탈로그 편집기."""
     products = _load_products()
     if not products:
-        # 빈 카탈로그면 예시 행 한 줄 미리 채워두기
         df = pd.DataFrame([{
             "code": "NEW-CODE",
             "name": "(여기를 클릭해서 수정)",
@@ -637,7 +645,6 @@ def render_catalog_page():
         }])
     else:
         df = pd.DataFrame(products)
-        # 누락 가능한 컬럼 보완
         for col, default in [("description", ""), ("currency", "KRW")]:
             if col not in df.columns:
                 df[col] = default
@@ -664,13 +671,14 @@ def render_catalog_page():
         num_rows="dynamic",
         use_container_width=True,
         hide_index=True,
-        key="catalog_editor",
+        key="catalog_editor_qr",
     )
 
     st.divider()
     col_save, col_info = st.columns([1, 3])
     with col_save:
-        if st.button("💾 카탈로그 저장", type="primary", use_container_width=True):
+        if st.button("💾 QR 카탈로그 저장", type="primary",
+                     use_container_width=True, key="save_qr_catalog"):
             new_products = []
             for _, row in edited.iterrows():
                 code = (row.get("code") or "").strip()
@@ -686,11 +694,150 @@ def render_catalog_page():
                 })
             _save_products(new_products)
             st.success(f"✅ {len(new_products)}개 상품 저장 완료. "
-                       "'견적서 작성' 페이지로 가면 즉시 반영됩니다.")
+                       "'QR 견적서 작성' 페이지로 가면 즉시 반영됩니다.")
     with col_info:
         st.caption(
-            "📝 **저장 후**: 견적서 작성 페이지의 사이드바 카탈로그가 즉시 갱신됩니다. "
+            "📝 **저장 후**: 견적서 작성 페이지의 카탈로그가 즉시 갱신됩니다. "
             "엑셀 템플릿의 드롭다운은 `template` 명령으로 재생성해야 반영됩니다."
+        )
+
+
+def _render_membership_catalog_editor():
+    """멤버십 견적서용 계층 카탈로그 편집기 (구분/분류 컬럼 포함)."""
+    st.caption(
+        "구분(예: PAYCO 멤버십 클라우드)과 분류(초기구축비/사용료/옵션)로 묶인 상품 목록입니다. "
+        "멤버십 견적서 작성 화면에서 '구분' 이 일치하는 항목만 드롭다운에 나타납니다."
+    )
+
+    products = _load_membership_products()
+    if not products:
+        df = pd.DataFrame([{
+            "code": "NEW-CODE",
+            "section": "PAYCO 멤버십 클라우드",
+            "subcategory": "초기구축비",
+            "name": "(여기를 클릭해서 수정)",
+            "billing_period": "1회성",
+            "unit_price": 0,
+            "unit_price_text": "",
+            "default_amount_text": "",
+            "notes": "",
+        }])
+        original_extra = {}
+    else:
+        df = pd.DataFrame(products)
+        # 사용자 표에서 다루지 않을 필드(sub_items, name_detail 등)는 보존
+        original_extra = {p["code"]: {k: v for k, v in p.items()
+                                       if k not in {"code", "section", "subcategory",
+                                                    "name", "billing_period", "unit_price",
+                                                    "unit_price_text", "default_amount_text",
+                                                    "notes"}}
+                          for p in products if p.get("code")}
+        # 누락 가능한 컬럼 보완
+        for col, default in [
+            ("section", ""), ("subcategory", ""), ("billing_period", ""),
+            ("unit_price", None), ("unit_price_text", ""),
+            ("default_amount_text", ""), ("notes", ""),
+        ]:
+            if col not in df.columns:
+                df[col] = default
+
+    # 기존 카탈로그에 등록된 구분들 + 기본값
+    existing_sections = sorted({p.get("section", "") for p in products if p.get("section")})
+    section_options = existing_sections or ["PAYCO 멤버십 클라우드", "PAYCO 오더 솔루션"]
+
+    edited = st.data_editor(
+        df[["code", "section", "subcategory", "name", "billing_period",
+            "unit_price", "unit_price_text", "default_amount_text", "notes"]],
+        column_config={
+            "code": st.column_config.TextColumn(
+                "코드", help="고유 식별자 (예: MC-INIT-SERVER)", required=True,
+            ),
+            "section": st.column_config.SelectboxColumn(
+                "구분", help="대분류 (시나리오 내 그룹)",
+                options=section_options + ["기타"],
+            ),
+            "subcategory": st.column_config.SelectboxColumn(
+                "분류", help="중분류",
+                options=_DEFAULT_SUBCATEGORIES + ["기타"],
+            ),
+            "name": st.column_config.TextColumn(
+                "상세 구분", help="견적서에 표시되는 항목명", required=True,
+            ),
+            "billing_period": st.column_config.SelectboxColumn(
+                "기간", options=["", "1회성", "매월", "발생시", "발생월", "1개당"],
+                help="청구 주기",
+            ),
+            "unit_price": st.column_config.NumberColumn(
+                "단가 (숫자)", min_value=0, step=100000, format="₩%d",
+                help="숫자 단가. 텍스트로 표현해야 하면 비우고 옆 컬럼 사용",
+            ),
+            "unit_price_text": st.column_config.TextColumn(
+                "단가(텍스트)",
+                help="예: '투입기간 X SW개발자 임금', '무상 제공', '7.9원 / 건'",
+            ),
+            "default_amount_text": st.column_config.TextColumn(
+                "기본 금액 텍스트",
+                help="비우면 자동 계산. '후청구', '협의 금액', '무상제공' 등 텍스트 입력 가능",
+            ),
+            "notes": st.column_config.TextColumn("비고"),
+        },
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        key="catalog_editor_mc",
+    )
+
+    st.divider()
+    col_save, col_info = st.columns([1, 3])
+    with col_save:
+        if st.button("💾 멤버십 카탈로그 저장", type="primary",
+                     use_container_width=True, key="save_mc_catalog"):
+            new_products = []
+            for _, row in edited.iterrows():
+                code = (row.get("code") or "").strip()
+                name = (row.get("name") or "").strip()
+                if not code or not name:
+                    continue
+                item: dict = {
+                    "code": code,
+                    "section": (row.get("section") or "").strip(),
+                    "subcategory": (row.get("subcategory") or "").strip(),
+                    "name": name,
+                }
+                bp = row.get("billing_period")
+                if isinstance(bp, str) and bp.strip():
+                    item["billing_period"] = bp.strip()
+                up = row.get("unit_price")
+                if pd.notna(up) and up not in ("", None):
+                    try:
+                        item["unit_price"] = float(up)
+                    except (TypeError, ValueError):
+                        item["unit_price"] = None
+                else:
+                    item["unit_price"] = None
+                upt = row.get("unit_price_text")
+                if isinstance(upt, str) and upt.strip():
+                    item["unit_price_text"] = upt.strip()
+                amt_text = row.get("default_amount_text")
+                if isinstance(amt_text, str) and amt_text.strip():
+                    item["default_amount_text"] = amt_text.strip()
+                notes = row.get("notes")
+                if isinstance(notes, str) and notes.strip():
+                    item["notes"] = notes.strip()
+                # 기존 sub_items / name_detail 등 추가 필드는 보존
+                extra = original_extra.get(code, {})
+                item.update(extra)
+                new_products.append(item)
+            _save_membership_products(new_products)
+            st.success(
+                f"✅ {len(new_products)}개 멤버십 상품 저장 완료. "
+                "'멤버십 견적서 작성' 페이지로 가면 즉시 반영됩니다."
+            )
+    with col_info:
+        st.caption(
+            "ℹ️ **종량제 하위 항목**(SMS/LMS 등) 은 이 표에서 편집하지 않습니다. "
+            "기존 항목의 `sub_items` 는 저장 시 자동으로 보존됩니다. "
+            "새 종량제 항목 추가가 필요하면 `catalog/membership_products.json` 직접 편집을 권장합니다."
         )
 
 
