@@ -154,6 +154,62 @@
       "unit_price_text": "투입기간 X SW개발자 전년도 임금 단가",
       "default_amount_text": "협의 금액",
       "notes": "-"
+    },
+
+    {
+      "code": "MC-DISC-LONGTERM-1Y",
+      "section": "멤버십 클라우드",
+      "subcategory": "할인",
+      "name": "장기계약 할인 (1년 이상)",
+      "billing_period": "1회성",
+      "unit_price": -1000000,
+      "notes": "장기 약정 시 적용. 협상에 따라 단가 조정 가능 (음수 유지)."
+    },
+    {
+      "code": "MC-DISC-NEW-CUSTOMER",
+      "section": "멤버십 클라우드",
+      "subcategory": "할인",
+      "name": "신규 도입 할인",
+      "billing_period": "1회성",
+      "unit_price": -2000000,
+      "notes": "신규 제휴사 우대. 협상에 따라 조정 가능."
+    },
+    {
+      "code": "MC-DISC-PARTNERSHIP",
+      "section": "멤버십 클라우드",
+      "subcategory": "할인",
+      "name": "전략적 파트너십 할인",
+      "billing_period": "1회성",
+      "unit_price": -3000000,
+      "notes": "전략적 파트너십 등 특별 관계 시 적용."
+    },
+    {
+      "code": "MC-DISC-MONTHLY-LONGTERM",
+      "section": "멤버십 클라우드",
+      "subcategory": "할인",
+      "name": "장기약정 월 사용료 할인",
+      "billing_period": "매월",
+      "unit_price": -500000,
+      "notes": "월 사용료에서 매월 차감되는 할인. 협상 결과에 따라 조정."
+    },
+
+    {
+      "code": "PO-DISC-LONGTERM",
+      "section": "오더 솔루션",
+      "subcategory": "할인",
+      "name": "장기계약 할인 (오더)",
+      "billing_period": "1회성",
+      "unit_price": -1000000,
+      "notes": "장기 약정 시 적용. 협상에 따라 조정 가능."
+    },
+    {
+      "code": "PO-DISC-PACKAGE",
+      "section": "오더 솔루션",
+      "subcategory": "할인",
+      "name": "멤버십+오더 패키지 묶음 할인",
+      "billing_period": "1회성",
+      "unit_price": -2000000,
+      "notes": "멤버십과 오더 동시 도입 시 적용."
     }
   ]
 }

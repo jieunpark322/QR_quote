@@ -114,6 +114,14 @@ def _format_won(amount: float) -> str:
     return f"{int(round(amount)):,}"
 
 
+def _money(amount: float) -> str:
+    """부호 우선 통화 표기 (-₩1,000,000 / ₩1,000,000)."""
+    val = int(round(amount))
+    if val < 0:
+        return f"-₩{abs(val):,}"
+    return f"₩{val:,}"
+
+
 def _compute_section_widths(section: MembershipSection,
                             usable_cm: float = 18.8) -> list:
     """콘텐츠 길이 + 중요도 기반으로 컬럼 너비를 유동 산출.
@@ -509,7 +517,7 @@ def _render_section_table(doc, section: MembershipSection, brand: Brand) -> None
             _fill_cell(label_cell, label, font=font, size_pt=8, bold=True,
                        align=WD_ALIGN_PARAGRAPH.RIGHT, bg=light_bg)
             _fill_cell(table.cell(r, 6),
-                       f"₩{_format_won(subtotal)}" if subtotal else "-",
+                       _money(subtotal) if subtotal else "-",
                        font=font, size_pt=8.5, bold=True,
                        align=WD_ALIGN_PARAGRAPH.RIGHT, bg=light_bg)
             _fill_cell(table.cell(r, 7), "-", font=font, size_pt=8,
@@ -527,7 +535,7 @@ def _render_section_table(doc, section: MembershipSection, brand: Brand) -> None
     # 섹션 예상 총 금액 행 (col 2~7 가로 병합으로 한 줄에 표시)
     if section.show_section_total:
         by_period = section_subtotals_by_period(section)
-        parts = [f"{period}: ₩{_format_won(amt)}" for period, amt in by_period.items()]
+        parts = [f"{period}: {_money(amt)}" for period, amt in by_period.items()]
         total_text = "  /  ".join(parts) if parts else "-"
 
         section_total_row = table.rows[r]
@@ -592,7 +600,7 @@ def _render_item_row_in_table(table, row_idx: int, item: MembershipLineItem,
 
     # 컬럼 4: 단가
     if item.unit_price is not None:
-        up_text = f"₩{_format_won(item.unit_price)}"
+        up_text = _money(item.unit_price)
         up_align = WD_ALIGN_PARAGRAPH.RIGHT
     elif item.unit_price_text:
         up_text = item.unit_price_text
@@ -613,7 +621,7 @@ def _render_item_row_in_table(table, row_idx: int, item: MembershipLineItem,
     if item.amount_text:
         amt_text = item.amount_text
     elif eff is not None:
-        amt_text = f"₩{_format_won(eff)}"
+        amt_text = _money(eff)
     else:
         amt_text = "-"
     _fill_cell(table.cell(row_idx, 6), amt_text,
@@ -645,7 +653,7 @@ def _render_grand_total(doc, scenario: MembershipScenario,
         return
 
     def _inline(period_map: dict) -> str:
-        return "  /  ".join(f"{p}: ₩{_format_won(v)}" for p, v in period_map.items())
+        return "  /  ".join(f"{p}: {_money(v)}" for p, v in period_map.items())
 
     vat_by_period = {p: round(v * vat_rate) for p, v in by_period.items()}
     total_by_period = {p: by_period[p] + vat_by_period[p] for p in by_period}

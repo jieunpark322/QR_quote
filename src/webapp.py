@@ -769,8 +769,8 @@ def _render_membership_catalog_editor():
                 help="청구 주기",
             ),
             "unit_price": st.column_config.NumberColumn(
-                "단가 (숫자)", min_value=0, step=100000, format="₩%d",
-                help="숫자 단가. 텍스트로 표현해야 하면 비우고 옆 컬럼 사용",
+                "단가 (숫자)", step=100000, format="₩%d",
+                help="숫자 단가. 할인은 음수로 (예: -1000000). 텍스트는 옆 칸 사용.",
             ),
             "unit_price_text": st.column_config.TextColumn(
                 "단가(텍스트)",
@@ -1095,7 +1095,8 @@ def _render_label_settings():
 # ═════════════════════════════════════════════════════════════
 
 # 분류 미리보기 옵션 (사용자가 직접 입력도 가능)
-_DEFAULT_SUBCATEGORIES = ["초기구축비", "사용료", "옵션"]
+# '할인' 은 음수 단가로 등록 → 총비용에서 자동 차감됨
+_DEFAULT_SUBCATEGORIES = ["초기구축비", "사용료", "옵션", "할인"]
 
 
 @st.cache_data
@@ -1483,12 +1484,16 @@ def _render_scenario_editor(s_idx: int, scenario: dict, products: list[dict]) ->
         vat_rate = 0.10
     subtotal, vat, total = scenario_vat_and_total(sc_obj, vat_rate)
 
+    def _money_label(v: float) -> str:
+        val = int(round(v))
+        return f"-₩{abs(val):,}" if val < 0 else f"₩{val:,}"
+
     st.divider()
-    st.caption(f"📊 **이 시나리오의 합계** (모든 기간 합산)")
+    st.caption("📊 **이 시나리오의 합계** (모든 기간 합산, 할인 차감 반영)")
     m1, m2, m3 = st.columns(3)
-    m1.metric("공급가액", f"₩{int(subtotal):,}")
-    m2.metric(f"부가세 ({int(vat_rate * 100)}%)", f"₩{int(vat):,}")
-    m3.metric("합계 금액", f"₩{int(total):,}")
+    m1.metric("공급가액", _money_label(subtotal))
+    m2.metric(f"부가세 ({int(vat_rate * 100)}%)", _money_label(vat))
+    m3.metric("합계 금액", _money_label(total))
 
 
 def _render_section_editor(s_idx: int, sec_idx: int, section: dict,
@@ -1573,7 +1578,10 @@ def _render_section_editor(s_idx: int, sec_idx: int, section: dict,
             "상세 구분": st.column_config.TextColumn("상세 구분", required=True),
             "기간": st.column_config.TextColumn("기간",
                 help="1회성 / 매월 / 발생시 / 발생월 / 1개당"),
-            "단가": st.column_config.NumberColumn("단가 (숫자)", min_value=0, format="₩%d"),
+            "단가": st.column_config.NumberColumn(
+                "단가 (숫자)", format="₩%d",
+                help="할인은 음수로 입력 (예: -1000000)",
+            ),
             "단가(텍스트)": st.column_config.TextColumn(
                 "단가(텍스트)",
                 help="숫자로 표현 불가한 단가 (예: '투입기간 X SW개발자 임금')",
