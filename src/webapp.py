@@ -962,17 +962,12 @@ def render_quote_page():
     st.subheader("4. 기타 안내 (선택)")
     notes = st.text_area(
         "기타 안내", key="notes",
-        placeholder="이 견적서에만 들어갈 추가 문구가 있다면 적어주세요.",
+        placeholder=(
+            "이 견적서에만 들어갈 추가 문구가 있다면 적어주세요.\n"
+            "(유효기간·입금 계좌 안내는 자동으로 견적서에 포함됩니다.)"
+        ),
         label_visibility="collapsed", height=80,
     )
-
-    # 자동으로 추가되는 문구 미리보기 (config + 브랜드 입금계좌 기준)
-    auto_lines = _compute_auto_notice_lines(brand_id, valid_until, labels)
-    if auto_lines:
-        with st.expander("ℹ 견적서에 자동으로 추가되는 문구 (펼쳐서 확인)", expanded=True):
-            for line in auto_lines:
-                st.markdown(f"- {line}")
-            st.caption("위 문구는 위에 입력한 내용과 함께 '기타 안내' 영역에 자동 포함됩니다.")
 
     st.divider()
     common_args = dict(
@@ -1273,12 +1268,21 @@ def render_catalog_page():
         _render_membership_catalog_editor()
 
 
+def _qr_catalog_signature(products: list[dict]) -> str:
+    """카탈로그 상태 비교용 시그니처 (변경 감지)."""
+    return json.dumps(products, ensure_ascii=False, sort_keys=True, default=str)
+
+
 def _render_qr_catalog_editor():
     """QR 견적서용 평면 카탈로그 편집기."""
     products = _load_products()
+    # 비교용 원본 시그니처를 첫 진입 시 저장
+    if "_qr_catalog_original_sig" not in st.session_state:
+        st.session_state["_qr_catalog_original_sig"] = _qr_catalog_signature(products)
+
     if not products:
         df = pd.DataFrame([{
-            "code": "NEW-CODE",
+            "code": "",
             "name": "(여기를 클릭해서 수정)",
             "description": "",
             "unit_price": 0,
@@ -1286,21 +1290,57 @@ def _render_qr_catalog_editor():
         }])
     else:
         df = pd.DataFrame(products)
-        for col, default in [("description", ""), ("currency", "KRW")]:
+        for col, default in [("description", ""), ("currency", "KRW"), ("code", "")]:
             if col not in df.columns:
                 df[col] = default
 
-    st.caption(
-        "💡 설명/청구기준은 셀 안에서 Alt+Enter로 줄바꿈 입력 가능합니다. "
-        "행 높이를 크게 잡아 여러 줄이 보이게 표시하며, 견적서 PDF에도 "
-        "줄바꿈이 그대로 반영됩니다."
-    )
+    # ── 상단 액션 바: 캡션(좌) + 저장 버튼(우) ──
+    cap_col, save_col = st.columns([5, 1.3])
+    with cap_col:
+        st.caption(
+            "💡 설명/청구기준은 셀 안에서 Alt+Enter로 줄바꿈 입력 가능합니다. "
+            "행 앞 **☰** 아이콘 영역을 잡아 위·아래로 드래그하면 순서를 바꿀 수 있어요."
+        )
+    with save_col:
+        save_clicked = st.button(
+            "💾 QR 카탈로그 저장", type="primary",
+            use_container_width=True, key="save_qr_catalog",
+        )
+
+    # ── 드래그앤드롭 순서 변경 ──
+    if len(df) > 1:
+        with st.expander("🔃 행 순서 변경 (드래그앤드롭)", expanded=False):
+            st.caption("왼쪽 **☰** 아이콘 영역을 잡아 위·아래로 드래그하세요.")
+            try:
+                from streamlit_sortables import sort_items
+                cat_labels = [
+                    f"☰  [{i + 1}]  {df.iloc[i]['name'] or '(이름 없음)'}"
+                    + (f"  ·  ₩{int(df.iloc[i]['unit_price']):,}"
+                       if pd.notna(df.iloc[i].get('unit_price'))
+                       and df.iloc[i].get('unit_price') else "")
+                    for i in range(len(df))
+                ]
+                sorted_labels = sort_items(
+                    cat_labels, direction="vertical",
+                    key="qr_cat_sort_dnd",
+                )
+                if sorted_labels and sorted_labels != cat_labels:
+                    try:
+                        new_order = [
+                            int(s.split("[", 1)[1].split("]", 1)[0]) - 1
+                            for s in sorted_labels
+                        ]
+                        df = df.iloc[new_order].reset_index(drop=True)
+                    except (ValueError, IndexError):
+                        pass
+            except ImportError:
+                st.warning("드래그앤드롭 컴포넌트가 설치되지 않았습니다.")
 
     edited = st.data_editor(
         df[["code", "name", "description", "unit_price", "currency"]],
         column_config={
             "code": st.column_config.TextColumn(
-                "코드", help="고유 식별자 (영문/숫자/하이픈)", required=True,
+                "코드 (선택사항)", help="고유 식별자 (영문/숫자/하이픈). 비워두면 자동 생성.",
                 width="small",
             ),
             "name": st.column_config.TextColumn(
@@ -1329,45 +1369,63 @@ def _render_qr_catalog_editor():
         key="catalog_editor_qr",
     )
 
-    st.divider()
-    col_save, col_info = st.columns([1, 3])
-    with col_save:
-        if st.button("💾 QR 카탈로그 저장", type="primary",
-                     use_container_width=True, key="save_qr_catalog"):
-            new_products = []
-            for _, row in edited.iterrows():
-                code = (row.get("code") or "").strip()
-                name = (row.get("name") or "").strip()
-                if not code or not name:
-                    continue
-                new_products.append({
-                    "code": code,
-                    "name": name,
-                    "description": (row.get("description") or "").strip(),
-                    "unit_price": int(row.get("unit_price") or 0),
-                    "currency": row.get("currency") or "KRW",
-                })
-            _save_products(new_products)
-            st.success(f"✅ {len(new_products)}개 상품 저장 완료. "
-                       "'QR 견적서 작성' 페이지로 가면 즉시 반영됩니다.")
-    with col_info:
-        st.caption(
-            "📝 **저장 후**: 견적서 작성 페이지의 카탈로그가 즉시 갱신됩니다. "
-            "엑셀 템플릿의 드롭다운은 `template` 명령으로 재생성해야 반영됩니다."
-        )
+    # ── 저장 처리 ──
+    if save_clicked:
+        new_products = []
+        for idx, row in edited.iterrows():
+            name = (row.get("name") or "").strip()
+            if not name:
+                continue
+            code = (row.get("code") or "").strip()
+            if not code:
+                # 코드가 비어있으면 품목명 기반 자동 생성
+                base = "".join(c for c in name if c.isalnum() or c in "_-")[:20] or "ITEM"
+                code = f"{base}-{idx + 1}"
+            new_products.append({
+                "code": code,
+                "name": name,
+                "description": (row.get("description") or "").strip(),
+                "unit_price": int(row.get("unit_price") or 0),
+                "currency": row.get("currency") or "KRW",
+            })
+        _save_products(new_products)
+        st.session_state["_qr_catalog_original_sig"] = _qr_catalog_signature(new_products)
+        st.success(f"✅ {len(new_products)}개 상품 저장 완료. "
+                   "'QR 견적서 작성' 페이지로 가면 즉시 반영됩니다.")
+
+    # ── 미저장 변경 감지 → 페이지 이탈 시 브라우저 경고 ──
+    current_snapshot = [
+        {
+            "code": (r.get("code") or "").strip(),
+            "name": (r.get("name") or "").strip(),
+            "description": (r.get("description") or "").strip(),
+            "unit_price": int(r.get("unit_price") or 0),
+            "currency": r.get("currency") or "KRW",
+        }
+        for _, r in edited.iterrows()
+        if (r.get("name") or "").strip()
+    ]
+    dirty = _qr_catalog_signature(current_snapshot) != st.session_state.get(
+        "_qr_catalog_original_sig", ""
+    )
+    if dirty:
+        st.caption("⚠ **미저장 변경사항이 있습니다.** 우측 상단 '💾 저장' 버튼을 눌러주세요.")
+    _inject_beforeunload(dirty)
+
+
+def _mc_catalog_signature(products: list[dict]) -> str:
+    return json.dumps(products, ensure_ascii=False, sort_keys=True, default=str)
 
 
 def _render_membership_catalog_editor():
     """멤버십 견적서용 계층 카탈로그 편집기 (구분/분류 컬럼 포함)."""
-    st.caption(
-        "구분(예: 멤버십 클라우드)과 분류(초기구축비/사용료/옵션)로 묶인 상품 목록입니다. "
-        "멤버십 견적서 작성 화면에서 '구분' 이 일치하는 항목만 드롭다운에 나타납니다."
-    )
-
     products = _load_membership_products()
+    if "_mc_catalog_original_sig" not in st.session_state:
+        st.session_state["_mc_catalog_original_sig"] = _mc_catalog_signature(products)
+
     if not products:
         df = pd.DataFrame([{
-            "code": "NEW-CODE",
+            "code": "",
             "section": "멤버십 클라우드",
             "subcategory": "초기구축비",
             "name": "(여기를 클릭해서 수정)",
@@ -1391,7 +1449,7 @@ def _render_membership_catalog_editor():
         for col, default in [
             ("section", ""), ("subcategory", ""), ("billing_period", ""),
             ("unit_price", None), ("unit_price_text", ""),
-            ("default_amount_text", ""), ("notes", ""),
+            ("default_amount_text", ""), ("notes", ""), ("code", ""),
         ]:
             if col not in df.columns:
                 df[col] = default
@@ -1400,12 +1458,53 @@ def _render_membership_catalog_editor():
     existing_sections = sorted({p.get("section", "") for p in products if p.get("section")})
     section_options = existing_sections or ["멤버십 클라우드", "오더 솔루션"]
 
+    # ── 상단 액션 바: 캡션(좌) + 저장 버튼(우) ──
+    cap_col, save_col = st.columns([5, 1.3])
+    with cap_col:
+        st.caption(
+            "구분(예: 멤버십 클라우드)과 분류(초기구축비/사용료/옵션)로 묶인 상품 목록입니다. "
+            "행 앞 **☰** 아이콘 영역을 잡아 위·아래로 드래그하면 순서를 바꿀 수 있어요."
+        )
+    with save_col:
+        save_clicked = st.button(
+            "💾 멤버십 카탈로그 저장", type="primary",
+            use_container_width=True, key="save_mc_catalog",
+        )
+
+    # ── 드래그앤드롭 순서 변경 ──
+    if len(df) > 1:
+        with st.expander("🔃 행 순서 변경 (드래그앤드롭)", expanded=False):
+            st.caption("왼쪽 **☰** 아이콘 영역을 잡아 위·아래로 드래그하세요.")
+            try:
+                from streamlit_sortables import sort_items
+                cat_labels = [
+                    f"☰  [{i + 1}]  [{df.iloc[i]['section'] or '?'}/{df.iloc[i]['subcategory'] or '?'}]  "
+                    f"{df.iloc[i]['name'] or '(이름 없음)'}"
+                    for i in range(len(df))
+                ]
+                sorted_labels = sort_items(
+                    cat_labels, direction="vertical",
+                    key="mc_cat_sort_dnd",
+                )
+                if sorted_labels and sorted_labels != cat_labels:
+                    try:
+                        new_order = [
+                            int(s.split("[", 1)[1].split("]", 1)[0]) - 1
+                            for s in sorted_labels
+                        ]
+                        df = df.iloc[new_order].reset_index(drop=True)
+                    except (ValueError, IndexError):
+                        pass
+            except ImportError:
+                st.warning("드래그앤드롭 컴포넌트가 설치되지 않았습니다.")
+
     edited = st.data_editor(
         df[["code", "section", "subcategory", "name", "billing_period",
             "unit_price", "unit_price_text", "default_amount_text", "notes"]],
         column_config={
             "code": st.column_config.TextColumn(
-                "코드", help="고유 식별자 (예: MC-INIT-SERVER)", required=True,
+                "코드 (선택사항)",
+                help="고유 식별자 (예: MC-INIT-SERVER). 비워두면 자동 생성됩니다.",
             ),
             "section": st.column_config.SelectboxColumn(
                 "구분", help="대분류 (시나리오 내 그룹)",
@@ -1446,54 +1545,77 @@ def _render_membership_catalog_editor():
         key="catalog_editor_mc",
     )
 
-    st.divider()
-    col_save, col_info = st.columns([1, 3])
-    with col_save:
-        if st.button("💾 멤버십 카탈로그 저장", type="primary",
-                     use_container_width=True, key="save_mc_catalog"):
-            new_products = []
-            for _, row in edited.iterrows():
-                code = (row.get("code") or "").strip()
-                name = (row.get("name") or "").strip()
-                if not code or not name:
-                    continue
-                item: dict = {
-                    "code": code,
-                    "section": (row.get("section") or "").strip(),
-                    "subcategory": (row.get("subcategory") or "").strip(),
-                    "name": name,
-                }
-                bp = row.get("billing_period")
-                if isinstance(bp, str) and bp.strip():
-                    item["billing_period"] = bp.strip()
-                up = row.get("unit_price")
-                if pd.notna(up) and up not in ("", None):
-                    try:
-                        item["unit_price"] = float(up)
-                    except (TypeError, ValueError):
-                        item["unit_price"] = None
-                else:
+    if save_clicked:
+        new_products = []
+        for idx, row in edited.iterrows():
+            name = (row.get("name") or "").strip()
+            if not name:
+                continue
+            code = (row.get("code") or "").strip()
+            if not code:
+                base = "".join(c for c in name if c.isalnum() or c in "_-")[:20] or "MC"
+                code = f"{base}-{idx + 1}"
+            item: dict = {
+                "code": code,
+                "section": (row.get("section") or "").strip(),
+                "subcategory": (row.get("subcategory") or "").strip(),
+                "name": name,
+            }
+            bp = row.get("billing_period")
+            if isinstance(bp, str) and bp.strip():
+                item["billing_period"] = bp.strip()
+            up = row.get("unit_price")
+            if pd.notna(up) and up not in ("", None):
+                try:
+                    item["unit_price"] = float(up)
+                except (TypeError, ValueError):
                     item["unit_price"] = None
-                upt = row.get("unit_price_text")
-                if isinstance(upt, str) and upt.strip():
-                    item["unit_price_text"] = upt.strip()
-                amt_text = row.get("default_amount_text")
-                if isinstance(amt_text, str) and amt_text.strip():
-                    item["default_amount_text"] = amt_text.strip()
-                notes = row.get("notes")
-                if isinstance(notes, str) and notes.strip():
-                    item["notes"] = notes.strip()
-                # 기존 sub_items / name_detail 등 추가 필드는 보존
-                extra = original_extra.get(code, {})
-                item.update(extra)
-                new_products.append(item)
-            _save_membership_products(new_products)
-            st.success(
-                f"✅ {len(new_products)}개 멤버십 상품 저장 완료. "
-                "'멤버십 견적서 작성' 페이지로 가면 즉시 반영됩니다."
-            )
-    with col_info:
-        st.caption("")
+            else:
+                item["unit_price"] = None
+            upt = row.get("unit_price_text")
+            if isinstance(upt, str) and upt.strip():
+                item["unit_price_text"] = upt.strip()
+            amt_text = row.get("default_amount_text")
+            if isinstance(amt_text, str) and amt_text.strip():
+                item["default_amount_text"] = amt_text.strip()
+            notes = row.get("notes")
+            if isinstance(notes, str) and notes.strip():
+                item["notes"] = notes.strip()
+            extra = original_extra.get(code, {})
+            item.update(extra)
+            new_products.append(item)
+        _save_membership_products(new_products)
+        st.session_state["_mc_catalog_original_sig"] = _mc_catalog_signature(new_products)
+        st.success(
+            f"✅ {len(new_products)}개 멤버십 상품 저장 완료. "
+            "'멤버십 견적서 작성' 페이지로 가면 즉시 반영됩니다."
+        )
+
+    # ── 미저장 변경 감지 → 페이지 이탈 시 브라우저 경고 ──
+    snapshot = []
+    for idx, r in edited.iterrows():
+        name = (r.get("name") or "").strip()
+        if not name:
+            continue
+        snapshot.append({
+            "code": (r.get("code") or "").strip(),
+            "section": (r.get("section") or "").strip(),
+            "subcategory": (r.get("subcategory") or "").strip(),
+            "name": name,
+            "billing_period": (r.get("billing_period") or "").strip(),
+            "unit_price": (float(r.get("unit_price"))
+                           if pd.notna(r.get("unit_price")) and r.get("unit_price") not in ("", None)
+                           else None),
+            "unit_price_text": (r.get("unit_price_text") or "").strip(),
+            "default_amount_text": (r.get("default_amount_text") or "").strip(),
+            "notes": (r.get("notes") or "").strip(),
+        })
+    dirty = _mc_catalog_signature(snapshot) != st.session_state.get(
+        "_mc_catalog_original_sig", ""
+    )
+    if dirty:
+        st.caption("⚠ **미저장 변경사항이 있습니다.** 우측 상단 '💾 저장' 버튼을 눌러주세요.")
+    _inject_beforeunload(dirty)
 
 
 # ═════════════════════════════════════════════════════════════
