@@ -1354,7 +1354,7 @@ def render_membership_quote_page():
             })
             st.rerun()
     with sc_btn_sample:
-        if st.button("📋 샘플로 채우기", use_container_width=True,
+        if st.button("📋 (간편)샘플 데이터로 채우기", use_container_width=True,
                      help="예시 데이터(시나리오 2개)로 폼을 채워봅니다. 현재 입력은 덮어써져요."):
             st.session_state.mc_doc = _load_membership_sample()
             st.rerun()
@@ -1367,7 +1367,7 @@ def render_membership_quote_page():
     if not scenarios:
         st.info(
             "아직 시나리오가 없어요. **+ 시나리오 추가** 를 눌러 시작하거나, "
-            "**📋 샘플로 채우기** 로 예시 구조를 먼저 확인할 수 있어요."
+            "**📋 (간편)샘플 데이터로 채우기** 로 예시 구조를 먼저 확인할 수 있어요."
         )
     else:
         tab_labels = [(sc.get("name") or f"시나리오 {i+1}") for i, sc in enumerate(scenarios)]
