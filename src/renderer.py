@@ -105,8 +105,15 @@ def _add_paragraph(doc, text: str, *, font: str, size_pt: float = 10,
 
 def _format_money(amount: float, currency: str = "KRW") -> str:
     if currency == "KRW":
-        return f"₩{int(round(amount)):,}"
+        val = int(round(amount))
+        if val < 0:
+            return f"-₩{abs(val):,}"
+        return f"₩{val:,}"
     return f"{amount:,.2f} {currency}"
+
+
+# 할인(음수) 강조 색상 — 진한 빨강
+DISCOUNT_COLOR = RGBColor(0xC0, 0x39, 0x2B)
 
 
 def _render_logo(doc, brand: Brand, project_root: Path) -> None:
@@ -345,22 +352,27 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
         r = p.add_run(col_spec[1])
         _apply_font(r, font, size_pt=9.5, bold=True, color=RGBColor(0xFF, 0xFF, 0xFF))
 
-    # 데이터 행
+    # 데이터 행 — 음수 amount (할인) 은 빨간색 + 굵게 강조
     for r_idx, item in enumerate(items, start=1):
         row_obj = table.rows[r_idx]
         row_obj.height = Cm(1.0)
         row_obj.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+        is_discount = (item.amount or 0) < 0 or (item.unit_price or 0) < 0
         for c_idx, (col_spec, width) in enumerate(zip(active_cols, widths)):
             _, _, _, align, getter, _, _ = col_spec
             cell = row_obj.cells[c_idx]
             cell.width = width
             _vcenter(cell)
+            if is_discount:
+                _set_cell_bg(cell, "FDECEA")  # 연한 빨강 배경
             p = cell.paragraphs[0]
             p.alignment = align
             p.paragraph_format.space_before = Pt(0)
             p.paragraph_format.space_after = Pt(0)
             run = p.add_run(getter(item))
-            _apply_font(run, font, size_pt=9)
+            _apply_font(run, font, size_pt=9,
+                        bold=is_discount,
+                        color=DISCOUNT_COLOR if is_discount else None)
 
 
 def _render_totals(doc, brand: Brand, document: QuoteDocument,

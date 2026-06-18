@@ -171,6 +171,22 @@ def _add_blank_row():
     )
 
 
+def _add_discount_row():
+    """할인 행 추가 — 단가가 음수로 미리 셋팅됨. 사용자가 협상가로 조정."""
+    df = st.session_state.items_df
+    new_row = {
+        "항목": "할인",
+        "설명": "협상가 (음수)",
+        "단가": -500000,
+        "기간(횟수)": None,
+        "수량": 1,
+        "비고": "협상에 따라 단가 조정",
+    }
+    st.session_state.items_df = pd.concat(
+        [df, pd.DataFrame([new_row])], ignore_index=True,
+    )
+
+
 def _reset_items():
     st.session_state.items_df = _empty_items_df()
 
@@ -271,11 +287,11 @@ def render_quote_page():
 
     st.subheader("3. 품목 내역")
     st.caption(
-        "💡 아래 드롭다운에서 카탈로그 상품을 선택해 추가하거나, "
-        "'+ 빈 행' 으로 직접 입력하세요. 표 셀을 클릭해 수정 가능합니다."
+        "💡 카탈로그 선택 또는 '+ 빈 행' 으로 추가. 할인은 **'+ 할인 행'** 으로 "
+        "음수 단가 행이 자동 추가됩니다. 표 셀을 클릭해 수정 가능합니다."
     )
 
-    pick_col, add_col, blank_col, reset_col = st.columns([6, 1.2, 1.2, 1.2])
+    pick_col, add_col, blank_col, disc_col, reset_col = st.columns([5, 1.2, 1.2, 1.2, 1.2])
     with pick_col:
         if products:
             options = list(range(len(products)))
@@ -303,6 +319,11 @@ def render_quote_page():
         if st.button("+ 빈 행", use_container_width=True):
             _add_blank_row()
             st.rerun()
+    with disc_col:
+        if st.button("💰 + 할인 행", use_container_width=True,
+                     help="음수 단가 행이 자동 추가됩니다. 협상 금액으로 단가 조정 가능."):
+            _add_discount_row()
+            st.rerun()
     with reset_col:
         if st.button("전체 초기화", use_container_width=True):
             _reset_items()
@@ -322,8 +343,10 @@ def render_quote_page():
             column_config={
                 "항목": st.column_config.TextColumn("항목", required=True),
                 "설명": st.column_config.TextColumn("설명"),
-                "단가": st.column_config.NumberColumn("단가", min_value=0, step=1000,
-                                                      format="₩%d"),
+                "단가": st.column_config.NumberColumn(
+                    "단가", step=1000, format="₩%d",
+                    help="할인은 음수로 입력 (예: -500000)",
+                ),
                 "기간(횟수)": st.column_config.NumberColumn("기간(횟수)", min_value=0, step=1),
                 "수량": st.column_config.NumberColumn("수량", min_value=0, step=1),
                 "공급가": st.column_config.NumberColumn(
@@ -1260,6 +1283,29 @@ def _add_blank_row_to_section(section: dict,
     })
 
 
+def _add_discount_row_to_section(section: dict) -> None:
+    """'할인' 분류에 음수 단가 할인 행 추가. 협상가로 사용자가 조정 가능."""
+    section.setdefault("categories", [])
+    target_cat = None
+    for cat in section["categories"]:
+        if cat.get("name") == "할인":
+            target_cat = cat
+            break
+    if target_cat is None:
+        target_cat = {
+            "name": "할인",
+            "items": [],
+            "show_subtotal": True,
+        }
+        section["categories"].append(target_cat)
+    target_cat.setdefault("items", []).append({
+        "name": "협상 할인 (이름 수정 가능)",
+        "billing_period": "1회성",
+        "unit_price": -1000000,
+        "notes": "협상에 따라 단가 조정",
+    })
+
+
 def _build_mc_document(state: dict) -> MembershipQuoteDocument:
     """session_state.mc_doc 를 Pydantic 객체로 변환."""
     return MembershipQuoteDocument.model_validate(state)
@@ -1515,10 +1561,10 @@ def _render_section_editor(s_idx: int, sec_idx: int, section: dict,
     flat_items = _section_to_flat_items(section)
     df = _mc_items_to_df(flat_items)
 
-    # 카탈로그 빠른 추가 (드롭다운) + 빈 행 추가
+    # 카탈로그 빠른 추가 (드롭다운) + 빈 행 + 할인 행
     section_name = section.get("name", "")
     matching = [p for p in products if p.get("section") == section_name]
-    quick_col1, quick_col2, quick_col3 = st.columns([5, 1.3, 1.3])
+    quick_col1, quick_col2, quick_col3, quick_col4 = st.columns([4, 1.3, 1.0, 1.3])
     with quick_col1:
         if matching:
             options = list(range(len(matching)))
@@ -1565,6 +1611,12 @@ def _render_section_editor(s_idx: int, sec_idx: int, section: dict,
                      use_container_width=True,
                      help="빈 행을 추가하고 직접 입력합니다"):
             _add_blank_row_to_section(section)
+            st.rerun()
+    with quick_col4:
+        if st.button("💰 + 할인", key=f"sec_adddiscount_{s_idx}_{sec_idx}",
+                     use_container_width=True,
+                     help="'할인' 분류에 음수 단가 행이 추가됩니다. 협상가로 조정 가능."):
+            _add_discount_row_to_section(section)
             st.rerun()
 
     # 표 편집
