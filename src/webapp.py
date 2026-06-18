@@ -1494,22 +1494,43 @@ def render_membership_quote_page():
     )
     state["remarks"] = [ln.strip() for ln in remarks_text.splitlines() if ln.strip()]
 
-    # ─── 4. 생성 ───
+    # ─── 4. 생성 / 미리보기 ───
     st.divider()
     can_generate = bool(cp.get("name")) and bool(scenarios)
     if not can_generate:
         st.info("제휴사 회사명과 시나리오 최소 1개를 입력해주세요.")
-    if st.button("📝 멤버십 견적서 생성", type="primary",
-                 use_container_width=True, disabled=not can_generate):
-        _generate_membership_quote(
-            state, soffice_available,
-            issuer_contact=dict(
-                name=issuer_name.strip(),
-                title=issuer_title.strip() or None,
-                phone=issuer_phone.strip() or None,
-                email=issuer_email.strip() or None,
+
+    issuer_contact = dict(
+        name=issuer_name.strip(),
+        title=issuer_title.strip() or None,
+        phone=issuer_phone.strip() or None,
+        email=issuer_email.strip() or None,
+    )
+
+    btn_preview, btn_generate = st.columns(2)
+    with btn_preview:
+        preview_disabled = (not can_generate) or (not soffice_available)
+        preview_clicked = st.button(
+            "👁 미리보기 (PDF)", use_container_width=True,
+            disabled=preview_disabled,
+            help=(
+                "현재 입력값으로 PDF 미리보기를 표시합니다."
+                if soffice_available
+                else "PDF 변환기(LibreOffice) 미감지 — 미리보기 불가"
             ),
+            key="mc_btn_preview",
         )
+    with btn_generate:
+        generate_clicked = st.button(
+            "📝 멤버십 견적서 생성", type="primary",
+            use_container_width=True, disabled=not can_generate,
+            key="mc_btn_generate",
+        )
+
+    if preview_clicked:
+        _preview_membership_quote(state, soffice_available, issuer_contact)
+    if generate_clicked:
+        _generate_membership_quote(state, soffice_available, issuer_contact)
 
 
 def _render_scenario_editor(s_idx: int, scenario: dict, products: list[dict]) -> None:
@@ -1703,8 +1724,11 @@ def _render_section_editor(s_idx: int, sec_idx: int, section: dict,
         pass
 
 
-def _generate_membership_quote(state: dict, soffice_available: bool,
-                               issuer_contact: dict | None = None):
+def _build_membership_artifacts(state: dict, soffice_available: bool,
+                                issuer_contact: dict | None = None,
+                                status_label: str = "멤버십 견적서 생성 중..."):
+    """state를 검증·렌더링하여 (document_id, docx_bytes, pdf_bytes) 반환.
+    실패 시 None 반환 (에러는 이미 화면에 표시됨)."""
     # 문서번호 비어있으면 자동 생성 (QR 견적서와 동일 패턴)
     if not (state.get("document_id") or "").strip():
         try:
@@ -1718,13 +1742,13 @@ def _generate_membership_quote(state: dict, soffice_available: bool,
         document = MembershipQuoteDocument.model_validate(state)
     except Exception as e:
         st.error(f"❌ 데이터 검증 실패: {e}")
-        return
+        return None
 
     try:
         brand = load_brand(PROJECT_ROOT, document.brand_id)
     except FileNotFoundError as e:
         st.error(f"❌ 브랜드 로드 실패: {e}")
-        return
+        return None
 
     # 발행 담당자 정보 — 폼에서 입력한 값으로 brand.contact_person 일회용 override
     if issuer_contact and (issuer_contact.get("name") or "").strip():
@@ -1741,14 +1765,14 @@ def _generate_membership_quote(state: dict, soffice_available: bool,
     output_dir.mkdir(parents=True, exist_ok=True)
     docx_path = output_dir / f"{document.document_id}.docx"
 
-    with st.status("멤버십 견적서 생성 중...", expanded=True) as status:
+    with st.status(status_label, expanded=True) as status:
         st.write("📝 DOCX 생성 중...")
         try:
             render_membership_docx(brand, document, PROJECT_ROOT, docx_path)
         except Exception as e:
             status.update(label="❌ DOCX 생성 실패", state="error")
             st.exception(e)
-            return
+            return None
         st.write(f"   ✓ {docx_path.name}")
 
         pdf_bytes = None
@@ -1763,12 +1787,25 @@ def _generate_membership_quote(state: dict, soffice_available: bool,
         status.update(label="✅ 생성 완료", state="complete")
 
     docx_bytes = docx_path.read_bytes()
+    return document.document_id, docx_bytes, pdf_bytes
+
+
+def _generate_membership_quote(state: dict, soffice_available: bool,
+                               issuer_contact: dict | None = None):
+    result = _build_membership_artifacts(
+        state, soffice_available, issuer_contact,
+        status_label="멤버십 견적서 생성 중...",
+    )
+    if result is None:
+        return
+    document_id, docx_bytes, pdf_bytes = result
+
     dl1, dl2 = st.columns(2)
     with dl1:
         st.download_button(
             "📝 DOCX 다운로드",
             data=docx_bytes,
-            file_name=f"{document.document_id}.docx",
+            file_name=f"{document_id}.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             use_container_width=True,
         )
@@ -1777,12 +1814,56 @@ def _generate_membership_quote(state: dict, soffice_available: bool,
             st.download_button(
                 "📑 PDF 다운로드",
                 data=pdf_bytes,
-                file_name=f"{document.document_id}.pdf",
+                file_name=f"{document_id}.pdf",
                 mime="application/pdf",
                 use_container_width=True,
             )
         else:
             st.button("📑 PDF 사용 불가", disabled=True, use_container_width=True)
+
+
+def _preview_membership_quote(state: dict, soffice_available: bool,
+                              issuer_contact: dict | None = None):
+    result = _build_membership_artifacts(
+        state, soffice_available, issuer_contact,
+        status_label="미리보기 생성 중...",
+    )
+    if result is None:
+        return
+    document_id, _docx_bytes, pdf_bytes = result
+
+    if not pdf_bytes:
+        st.error("❌ PDF 변환기(LibreOffice)를 사용할 수 없어 미리보기를 표시할 수 없습니다.")
+        return
+
+    st.success(f"미리보기: **{document_id}.pdf**")
+
+    rendered = False
+    try:
+        import pypdfium2 as pdfium
+        pdf = pdfium.PdfDocument(pdf_bytes)
+        try:
+            n_pages = len(pdf)
+            for i in range(n_pages):
+                page = pdf[i]
+                bitmap = page.render(scale=2)
+                img = bitmap.to_pil()
+                st.image(img, caption=f"페이지 {i + 1} / {n_pages}",
+                         use_container_width=True)
+            rendered = True
+        finally:
+            pdf.close()
+    except Exception as e:
+        st.warning(f"이미지 미리보기를 사용할 수 없습니다 ({e}). 아래 다운로드로 확인하세요.")
+
+    st.download_button(
+        ("📑 미리보기 PDF 다운로드" if rendered else "📑 미리보기 PDF 다운로드 (필수)"),
+        data=pdf_bytes,
+        file_name=f"preview_{document_id}.pdf",
+        mime="application/pdf",
+        use_container_width=True,
+    )
+    st.caption("💡 미리보기는 화면 표시용입니다. 정식 파일은 '📝 멤버십 견적서 생성' 버튼을 누르세요.")
 
 
 # ═════════════════════════════════════════════════════════════
