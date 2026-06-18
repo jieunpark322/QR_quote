@@ -188,19 +188,22 @@ def _render_header(doc, brand: Brand, document: QuoteDocument,
     _add_paragraph(doc, title_text, font=font, size_pt=20, bold=True,
                    alignment=WD_ALIGN_PARAGRAPH.CENTER, color=primary, space_after_pt=4)
 
+    # 발행자(좌)를 넓게, 발행정보(우)를 우측 끝으로 컴팩트하게
+    LEFT_W = Cm(11.5)
+    RIGHT_W = Cm(6.5)
     info_table = doc.add_table(rows=1, cols=2)
     info_table.autofit = False
     info_table.alignment = WD_TABLE_ALIGNMENT.LEFT
-    info_table.columns[0].width = Cm(7.0)
-    info_table.columns[1].width = Cm(10.0)
+    info_table.columns[0].width = LEFT_W
+    info_table.columns[1].width = RIGHT_W
 
     # 우측 inner 표(5행 × 0.6cm = 3.0cm)와 맞춰 외부 행 높이 명시 → 좌측도 vAlign center 동작
     info_table.rows[0].height = Cm(3.0)
     info_table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
 
     left, right = info_table.rows[0].cells
-    left.width = Cm(7.0)
-    right.width = Cm(10.0)
+    left.width = LEFT_W
+    right.width = RIGHT_W
     _vcenter(left)
     _vcenter(right)
     # 좌측 셀 padding 제거 → "(주)소프트먼트" 가 페이지 여백과 정확히 정렬
@@ -248,10 +251,10 @@ def _render_header(doc, brand: Brand, document: QuoteDocument,
 
     inner = right.add_table(rows=len(info_rows), cols=2)
     inner.autofit = False
-    # 명시적 컬럼 너비: 라벨은 좁게(1.8cm), 값(이메일 등)은 넓게(7.5cm)
-    # 외부 우측 셀 9.5cm 안에 들어가도록 설정 (1.8 + 7.5 = 9.3cm, 여유 0.2cm)
-    LABEL_W = Cm(1.8)
-    VALUE_W = Cm(7.5)
+    inner.alignment = WD_TABLE_ALIGNMENT.RIGHT
+    # 우측 발행정보 표는 컴팩트하게 (라벨 1.5cm + 값 4.8cm = 6.3cm)
+    LABEL_W = Cm(1.5)
+    VALUE_W = Cm(4.8)
     inner.columns[0].width = LABEL_W
     inner.columns[1].width = VALUE_W
     for idx, (label, value) in enumerate(info_rows):
@@ -465,13 +468,19 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
         _apply_font(r, font, size_pt=9.5, bold=True, color=RGBColor(0xFF, 0xFF, 0xFF))
 
     # 데이터 행 — 음수 amount (할인) 은 빨간색 + 굵게 강조
-    # 1페이지 강제 위해 항목 수에 따라 폰트·행높이 자동 축소
+    # 1페이지 강제 + 적을 땐 알맞게 채우도록 항목 수별 자동 폰트·행높이
     n_items = len(items)
-    if n_items <= 8:
+    if n_items <= 3:
+        cell_font_pt, row_h_cm = 10.5, 1.5   # 1~3행: 한 장에 여유 → 크게
+    elif n_items <= 6:
+        cell_font_pt, row_h_cm = 10, 1.2
+    elif n_items <= 10:
         cell_font_pt, row_h_cm = 9, 1.0
     elif n_items <= 14:
+        cell_font_pt, row_h_cm = 8.5, 0.85
+    elif n_items <= 18:
         cell_font_pt, row_h_cm = 8, 0.7
-    elif n_items <= 20:
+    elif n_items <= 22:
         cell_font_pt, row_h_cm = 7.5, 0.6
     else:
         cell_font_pt, row_h_cm = 7, 0.5

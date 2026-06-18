@@ -15,6 +15,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
+from .renderer import _force_fixed_column_widths
 from .membership_models import (
     MembershipCategory,
     MembershipLineItem,
@@ -478,6 +479,8 @@ def _render_section_table(doc, section: MembershipSection, brand: Brand) -> None
     headers = ["구분", "분류", "상세 구분", "기간", "단가", "할인", "금액", "비고"]
     # 콘텐츠 길이 + 중요도 기반 유동 컬럼 너비
     widths = _compute_section_widths(section)
+    # LibreOffice PDF 변환 시 컬럼 너비가 무시되지 않도록 layout fixed + tcW 강제
+    _force_fixed_column_widths(table, widths)
     _render_table_header_row(table, 0, headers, widths, font, primary_hex)
 
     # 본문 채우기
