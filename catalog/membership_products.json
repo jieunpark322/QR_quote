@@ -1,0 +1,168 @@
+{
+  "_doc": "멤버십 클라우드 견적서용 상품 카탈로그. section(구분) → subcategory(분류) → 항목 계층. unit_price가 null이고 unit_price_text가 있으면 텍스트로 표기 (예: 투입기간 X SW개발자 임금). default_amount_text 가 있으면 금액 칸을 텍스트로 표기 (예: '후청구', '협의 금액', '무상제공'). sub_items 는 종량제처럼 한 항목 아래 여러 단위 단가를 묶을 때 사용.",
+
+  "products": [
+    {
+      "code": "MC-INIT-SERVER",
+      "section": "PAYCO 멤버십 클라우드",
+      "subcategory": "초기구축비",
+      "name": "서버/NW 인프라비용",
+      "billing_period": "1회성",
+      "unit_price": 20000000,
+      "notes": "-"
+    },
+    {
+      "code": "MC-INIT-SETUP",
+      "section": "PAYCO 멤버십 클라우드",
+      "subcategory": "초기구축비",
+      "name": "브랜드 초기 설정 / 테스트 / 검수 비용",
+      "billing_period": "1회성",
+      "unit_price": 25000000,
+      "notes": "-"
+    },
+    {
+      "code": "MC-INIT-MIGRATION",
+      "section": "PAYCO 멤버십 클라우드",
+      "subcategory": "초기구축비",
+      "name": "마이그레이션",
+      "billing_period": "발생시",
+      "unit_price": null,
+      "unit_price_text": "투입기간 X SW개발자 전년도 임금 단가",
+      "default_amount_text": "후청구",
+      "notes": "-"
+    },
+
+    {
+      "code": "MC-USE-MEMBER",
+      "section": "PAYCO 멤버십 클라우드",
+      "subcategory": "사용료",
+      "name": "회원관리기능 사용료",
+      "billing_period": "매월",
+      "unit_price": 1000000,
+      "unit_price_text": "0명 이상 ~ 50만명 이하",
+      "notes": "기본구간 적용"
+    },
+    {
+      "code": "MC-USE-CRM",
+      "section": "PAYCO 멤버십 클라우드",
+      "subcategory": "사용료",
+      "name": "CRM 솔루션 사용료",
+      "billing_period": "매월",
+      "unit_price": 2250000,
+      "unit_price_text": "51개 이상 ~ 200개 이하",
+      "notes": "-"
+    },
+    {
+      "code": "MC-USE-METERED",
+      "section": "PAYCO 멤버십 클라우드",
+      "subcategory": "사용료",
+      "name": "선택기능 사용료(종량제)",
+      "billing_period": "매월",
+      "unit_price": null,
+      "default_amount_text": "후청구",
+      "notes": "사용량 만큼 부과",
+      "sub_items": [
+        { "label": "문자 발송 시", "spec": "(SMS) 9.9원/건" },
+        { "label": "",           "spec": "(LMS) 30원/건" },
+        { "label": "PUSH 발송 시", "spec": "0.04원/건" },
+        { "label": "알림톡 발송 시", "spec": "7.9원/건" },
+        { "label": "이메일 발송 시", "spec": "0.5원/건" },
+        { "label": "충전금 모바일 충전 시", "spec": "충전금액의 3%" }
+      ]
+    },
+    {
+      "code": "MC-USE-CUSTOM",
+      "section": "PAYCO 멤버십 클라우드",
+      "subcategory": "사용료",
+      "name": "브랜드사 요청에 의한 커스텀 개발 비용",
+      "billing_period": "발생월",
+      "unit_price": null,
+      "unit_price_text": "투입기간 X SW개발자 전년도 임금 단가",
+      "default_amount_text": "협의 금액",
+      "notes": "-"
+    },
+
+    {
+      "code": "MC-OPT-PAYCO",
+      "section": "PAYCO 멤버십 클라우드",
+      "subcategory": "옵션",
+      "name": "페이코 채널링 연동",
+      "billing_period": "1회성",
+      "unit_price": null,
+      "unit_price_text": "무상 제공",
+      "default_amount_text": "무상제공",
+      "notes": "-"
+    },
+    {
+      "code": "MC-OPT-KAKAOPAY",
+      "section": "PAYCO 멤버십 클라우드",
+      "subcategory": "옵션",
+      "name": "카카오페이 채널링 연동",
+      "billing_period": "1회성",
+      "unit_price": 1000000,
+      "notes": "-"
+    },
+    {
+      "code": "MC-OPT-NAVERPAY",
+      "section": "PAYCO 멤버십 클라우드",
+      "subcategory": "옵션",
+      "name": "네이버페이 채널링 연동",
+      "billing_period": "1회성",
+      "unit_price": 1000000,
+      "notes": "-"
+    },
+    {
+      "code": "MC-OPT-EXTRA-MODULE",
+      "section": "PAYCO 멤버십 클라우드",
+      "subcategory": "옵션",
+      "name": "온/오프 모듈 추가 연동 (2차 이후 연동)",
+      "billing_period": "1개당",
+      "unit_price": 7000000,
+      "notes": "발생시"
+    },
+
+    {
+      "code": "PO-INIT-SETUP",
+      "section": "PAYCO 오더 솔루션",
+      "subcategory": "초기구축비",
+      "name": "제휴사 오더서비스 초기 시스템 구축",
+      "name_detail": "- 브랜드 / 매장 / 메뉴 초기 세팅",
+      "billing_period": "1회성",
+      "unit_price": 25000000,
+      "notes": "-"
+    },
+
+    {
+      "code": "PO-USE-ORDER",
+      "section": "PAYCO 오더 솔루션",
+      "subcategory": "사용료",
+      "name": "오더 솔루션 이용료",
+      "name_detail": "- CS 대응\n- 현장 지원",
+      "billing_period": "매월",
+      "unit_price": 3000000,
+      "notes": "-"
+    },
+    {
+      "code": "PO-USE-NOTIFY",
+      "section": "PAYCO 오더 솔루션",
+      "subcategory": "사용료",
+      "name": "알림톡 발송료",
+      "billing_period": "매월",
+      "unit_price": null,
+      "unit_price_text": "7.9원 / 건",
+      "default_amount_text": "후청구",
+      "notes": "-"
+    },
+    {
+      "code": "PO-USE-CUSTOM",
+      "section": "PAYCO 오더 솔루션",
+      "subcategory": "사용료",
+      "name": "별도 요청에 의한 커스텀 개발 비용",
+      "billing_period": "발생월",
+      "unit_price": null,
+      "unit_price_text": "투입기간 X SW개발자 전년도 임금 단가",
+      "default_amount_text": "협의 금액",
+      "notes": "-"
+    }
+  ]
+}

@@ -39,6 +39,19 @@ from src.models import (
     SignatureInfo,
     Totals,
 )
+from src.membership_models import (
+    MembershipCategory,
+    MembershipLineItem,
+    MembershipParty,
+    MembershipQuoteDocument,
+    MembershipScenario,
+    MembershipSection,
+    MembershipSubItem,
+    category_subtotal,
+    scenario_grand_total_by_period,
+    section_subtotals_by_period,
+)
+from src.membership_renderer import render_membership_docx
 from src.pdf_converter import convert_docx_to_pdf, find_soffice
 from src.renderer import render_docx
 
@@ -930,6 +943,466 @@ def _render_label_settings():
 
 
 # ═════════════════════════════════════════════════════════════
+# 페이지 4: 멤버십 클라우드 견적서 작성
+# ═════════════════════════════════════════════════════════════
+
+# 분류 미리보기 옵션 (사용자가 직접 입력도 가능)
+_DEFAULT_SUBCATEGORIES = ["초기구축비", "사용료", "옵션"]
+
+
+@st.cache_data
+def _load_membership_products() -> list[dict]:
+    path = PROJECT_ROOT / "catalog" / "membership_products.json"
+    if not path.exists():
+        return []
+    return json.loads(path.read_text(encoding="utf-8")).get("products", [])
+
+
+def _save_membership_products(products: list[dict]) -> None:
+    path = PROJECT_ROOT / "catalog" / "membership_products.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"products": products}, ensure_ascii=False, indent=2),
+                    encoding="utf-8")
+    _load_membership_products.clear()
+
+
+def _load_membership_sample() -> dict:
+    """초기 상태용 샘플 데이터."""
+    path = PROJECT_ROOT / "data" / "membership_quotes" / "sample.json"
+    if path.exists():
+        return json.loads(path.read_text(encoding="utf-8"))
+    return {
+        "document_id": "MC-NEW",
+        "title": "멤버십 클라우드 견적서",
+        "counterparty": {"label": "제휴사", "name": "", "address": None, "ceo": None, "contact": None},
+        "supplier": None,
+        "scenarios": [],
+        "remarks": ["견적유효 : 견적일로부터 15일", "결제조건 : 현금결제 (귀사 결제조건)"],
+    }
+
+
+def _ensure_membership_state():
+    if "mc_doc" not in st.session_state:
+        sample = _load_membership_sample()
+        # issued_date 가 없으면 오늘로
+        sample.setdefault("issued_date", date.today().isoformat())
+        st.session_state.mc_doc = sample
+
+
+def _mc_items_to_df(items: list[dict]) -> pd.DataFrame:
+    """[{name, billing_period, unit_price, ...}, ...] → DataFrame."""
+    if not items:
+        return pd.DataFrame(columns=[
+            "분류", "상세 구분", "기간", "단가", "단가(텍스트)",
+            "할인율(%)", "금액 텍스트", "비고",
+        ])
+    rows = []
+    for it in items:
+        rows.append({
+            "분류": it.get("_subcategory", ""),
+            "상세 구분": it.get("name", ""),
+            "기간": it.get("billing_period", ""),
+            "단가": it.get("unit_price"),
+            "단가(텍스트)": it.get("unit_price_text", ""),
+            "할인율(%)": int(it.get("discount_rate", 0) * 100) if it.get("discount_rate") else None,
+            "금액 텍스트": it.get("amount_text", ""),
+            "비고": it.get("notes", ""),
+        })
+    return pd.DataFrame(rows)
+
+
+def _df_to_section_categories(df: pd.DataFrame) -> list[dict]:
+    """편집된 DataFrame → categories 리스트 (분류별 그룹).
+    설정된 분류가 없는 행은 '기타' 분류로 묶음.
+    """
+    if df.empty:
+        return []
+    # 분류별 그룹 유지 순서
+    seen_order = []
+    groups: dict[str, list[dict]] = {}
+    for _, row in df.iterrows():
+        name = (row.get("상세 구분") or "").strip() if isinstance(row.get("상세 구분"), str) else ""
+        if not name:
+            continue
+        sub = (row.get("분류") or "").strip() if isinstance(row.get("분류"), str) else ""
+        if not sub:
+            sub = "기타"
+        if sub not in groups:
+            groups[sub] = []
+            seen_order.append(sub)
+        item: dict = {"name": name}
+        billing = row.get("기간")
+        if isinstance(billing, str) and billing.strip():
+            item["billing_period"] = billing.strip()
+        up = row.get("단가")
+        if pd.notna(up) and up not in ("", None):
+            try:
+                item["unit_price"] = float(up)
+            except (TypeError, ValueError):
+                pass
+        upt = row.get("단가(텍스트)")
+        if isinstance(upt, str) and upt.strip():
+            item["unit_price_text"] = upt.strip()
+        dr = row.get("할인율(%)")
+        if pd.notna(dr) and dr not in ("", None):
+            try:
+                drv = float(dr)
+                if drv > 0:
+                    item["discount_rate"] = drv / 100
+            except (TypeError, ValueError):
+                pass
+        amt_text = row.get("금액 텍스트")
+        if isinstance(amt_text, str) and amt_text.strip():
+            item["amount_text"] = amt_text.strip()
+        notes = row.get("비고")
+        if isinstance(notes, str) and notes.strip():
+            item["notes"] = notes.strip()
+        groups[sub].append(item)
+
+    cats = []
+    for sub in seen_order:
+        cats.append({
+            "name": sub,
+            "items": groups[sub],
+            "show_subtotal": sub != "옵션",  # 옵션은 합계 미표시 기본
+        })
+    return cats
+
+
+def _section_to_flat_items(section: dict) -> list[dict]:
+    """section의 categories→items 를 평면화. _subcategory 필드 추가."""
+    flat = []
+    for cat in section.get("categories", []):
+        for it in cat.get("items", []):
+            flat.append({**it, "_subcategory": cat.get("name", "")})
+    return flat
+
+
+def _build_mc_document(state: dict) -> MembershipQuoteDocument:
+    """session_state.mc_doc 를 Pydantic 객체로 변환."""
+    return MembershipQuoteDocument.model_validate(state)
+
+
+def render_membership_quote_page():
+    _ensure_membership_state()
+    state = st.session_state.mc_doc
+    products = _load_membership_products()
+    soffice_available = find_soffice() is not None
+
+    # 사이드바: 발행 정보
+    with st.sidebar:
+        st.divider()
+        st.header("⚙ 발행 정보")
+        try:
+            cur_issued = date.fromisoformat(state.get("issued_date", date.today().isoformat()))
+        except (TypeError, ValueError):
+            cur_issued = date.today()
+        new_issued = st.date_input("발행일", value=cur_issued, key="mc_issued_date")
+        state["issued_date"] = new_issued.isoformat()
+        if not soffice_available:
+            st.warning("⚠ LibreOffice 미감지 — PDF 변환 건너뜀")
+
+    st.title("🏢 멤버십 클라우드 견적서 작성")
+    st.caption(
+        "프랜차이즈 B2B 계약용 견적서 — 시나리오(앱&POS 연동 / POS만 등)별 페이지 분리, "
+        "구분-분류-항목 계층, 자동 소계·총계까지 반영됩니다."
+    )
+
+    # ─── 0. 문서 기본 ───
+    state["document_id"] = st.text_input(
+        "문서번호", value=state.get("document_id", "MC-NEW"), key="mc_doc_id",
+    )
+    state["title"] = st.text_input(
+        "견적서 제목", value=state.get("title", "멤버십 클라우드 견적서"),
+        key="mc_title",
+    )
+
+    # ─── 1. 양측 발행 정보 ───
+    st.subheader("1. 발행 정보 (제휴사 / 회사)")
+    pc1, pc2 = st.columns(2)
+    cp = state.setdefault("counterparty", {"label": "제휴사", "name": ""})
+    sup = state.setdefault("supplier", None)
+    if sup is None:
+        sup = {
+            "label": "회사",
+            "name": "(주)소프트먼트",
+            "address": "서울특별시 금천구 가산디지털1로 145 에이스하이엔드타워3차 905호",
+            "ceo": "장하일, 정재훈",
+            "contact": "박지은 (QR사업부 매니저)",
+        }
+        state["supplier"] = sup
+
+    with pc1:
+        st.markdown("**제휴사 (고객)**")
+        cp["name"] = st.text_input("회사명", cp.get("name", ""), key="mc_cp_name",
+                                   placeholder="예: (주)걸작떡볶이치킨")
+        cp["ceo"] = st.text_input("대표이사", cp.get("ceo") or "", key="mc_cp_ceo")
+        cp["address"] = st.text_input("주소", cp.get("address") or "", key="mc_cp_addr")
+        cp["contact"] = st.text_input("담당자", cp.get("contact") or "", key="mc_cp_contact")
+    with pc2:
+        st.markdown("**회사 (우리)**")
+        sup["name"] = st.text_input("회사명", sup.get("name", ""), key="mc_sup_name")
+        sup["ceo"] = st.text_input("대표이사", sup.get("ceo") or "", key="mc_sup_ceo")
+        sup["address"] = st.text_input("주소", sup.get("address") or "", key="mc_sup_addr")
+        sup["contact"] = st.text_input("담당자", sup.get("contact") or "", key="mc_sup_contact")
+
+    # ─── 2. 시나리오 (탭) ───
+    st.subheader("2. 시나리오 (페이지별로 분리됨)")
+    scenarios = state.setdefault("scenarios", [])
+
+    sc_btn1, sc_btn2 = st.columns([1, 5])
+    with sc_btn1:
+        if st.button("+ 시나리오 추가", use_container_width=True):
+            scenarios.append({
+                "name": f"시나리오 {len(scenarios) + 1}",
+                "subject": "",
+                "sections": [],
+                "show_grand_total": True,
+            })
+            st.rerun()
+
+    if not scenarios:
+        st.info("시나리오가 없습니다. '+ 시나리오 추가' 버튼을 눌러 시작하세요.")
+    else:
+        tab_labels = [(sc.get("name") or f"시나리오 {i+1}") for i, sc in enumerate(scenarios)]
+        tabs = st.tabs(tab_labels)
+        for s_idx, (tab, scenario) in enumerate(zip(tabs, scenarios)):
+            with tab:
+                _render_scenario_editor(s_idx, scenario, products)
+
+    # ─── 3. Remarks ───
+    st.subheader("3. Remarks (참고 사항)")
+    remarks = state.setdefault("remarks", [])
+    remarks_text = st.text_area(
+        "한 줄에 하나씩",
+        value="\n".join(remarks),
+        height=80,
+        key="mc_remarks",
+        label_visibility="collapsed",
+    )
+    state["remarks"] = [ln.strip() for ln in remarks_text.splitlines() if ln.strip()]
+
+    # ─── 4. 생성 ───
+    st.divider()
+    can_generate = bool(cp.get("name")) and bool(scenarios)
+    if not can_generate:
+        st.info("제휴사 회사명과 시나리오 최소 1개를 입력해주세요.")
+    if st.button("📝 멤버십 견적서 생성", type="primary",
+                 use_container_width=True, disabled=not can_generate):
+        _generate_membership_quote(state, soffice_available)
+
+
+def _render_scenario_editor(s_idx: int, scenario: dict, products: list[dict]) -> None:
+    """한 시나리오 탭 안의 편집기."""
+    sc1, sc2 = st.columns([5, 1])
+    with sc1:
+        scenario["name"] = st.text_input(
+            "시나리오 이름", value=scenario.get("name", ""),
+            key=f"sc_name_{s_idx}",
+            placeholder="예: 앱&POS 연동 (멤버십+오더)",
+        )
+    with sc2:
+        if st.button("❌ 시나리오 삭제", key=f"sc_del_{s_idx}",
+                     use_container_width=True):
+            st.session_state.mc_doc["scenarios"].pop(s_idx)
+            st.rerun()
+
+    scenario["subject"] = st.text_input(
+        "항목 부제 (선택)", value=scenario.get("subject") or "",
+        key=f"sc_subject_{s_idx}",
+        placeholder="예: 멤버십 클라우드 솔루션 + PAYCO 오더 솔루션",
+    )
+
+    # 구분(섹션) 목록
+    sections = scenario.setdefault("sections", [])
+
+    sec_btn1, sec_btn2 = st.columns([1, 5])
+    with sec_btn1:
+        if st.button(f"+ 구분 추가", key=f"sec_add_{s_idx}",
+                     use_container_width=True):
+            sections.append({
+                "name": "새 구분",
+                "categories": [],
+                "show_section_total": True,
+            })
+            st.rerun()
+
+    if not sections:
+        st.info("이 시나리오에 구분이 없습니다. '+ 구분 추가' 를 눌러 추가하세요.")
+        return
+
+    for sec_idx, section in enumerate(sections):
+        with st.expander(f"📂 {section.get('name', '(이름 없음)')}",
+                         expanded=True):
+            _render_section_editor(s_idx, sec_idx, section, products)
+
+
+def _render_section_editor(s_idx: int, sec_idx: int, section: dict,
+                           products: list[dict]) -> None:
+    sec1, sec2 = st.columns([5, 1])
+    with sec1:
+        section["name"] = st.text_input(
+            "구분 이름", value=section.get("name", ""),
+            key=f"sec_name_{s_idx}_{sec_idx}",
+            placeholder="예: PAYCO 멤버십 클라우드",
+        )
+    with sec2:
+        if st.button("❌ 구분 삭제", key=f"sec_del_{s_idx}_{sec_idx}",
+                     use_container_width=True):
+            st.session_state.mc_doc["scenarios"][s_idx]["sections"].pop(sec_idx)
+            st.rerun()
+
+    # 이 구분의 항목들을 평면 표로 (분류는 컬럼)
+    flat_items = _section_to_flat_items(section)
+    df = _mc_items_to_df(flat_items)
+
+    # 카탈로그 빠른 추가 (드롭다운)
+    section_name = section.get("name", "")
+    matching = [p for p in products if p.get("section") == section_name]
+    quick_col1, quick_col2 = st.columns([6, 1])
+    with quick_col1:
+        if matching:
+            options = list(range(len(matching)))
+            picked = st.selectbox(
+                "카탈로그에서 항목 추가",
+                options=options,
+                index=None,
+                format_func=lambda i: (
+                    f"[{matching[i].get('subcategory', '-')}] {matching[i]['name']}"
+                ),
+                placeholder=f"'{section_name}' 카탈로그에서 항목 선택...",
+                key=f"sec_pick_{s_idx}_{sec_idx}",
+                label_visibility="collapsed",
+            )
+        else:
+            st.caption(f"'{section_name}' 매칭되는 카탈로그 항목이 없습니다. (카탈로그의 section 필드 일치 필요)")
+            picked = None
+    with quick_col2:
+        if st.button("+ 추가", key=f"sec_addrow_{s_idx}_{sec_idx}",
+                     use_container_width=True, disabled=picked is None):
+            p = matching[picked]
+            new_row = {
+                "분류": p.get("subcategory", "기타"),
+                "상세 구분": p["name"],
+                "기간": p.get("billing_period", ""),
+                "단가": p.get("unit_price"),
+                "단가(텍스트)": p.get("unit_price_text", ""),
+                "할인율(%)": None,
+                "금액 텍스트": p.get("default_amount_text", ""),
+                "비고": p.get("notes", ""),
+            }
+            df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+            # 즉시 section 에 반영
+            section["categories"] = _df_to_section_categories(df)
+            st.rerun()
+
+    # 표 편집
+    edited = st.data_editor(
+        df,
+        column_config={
+            "분류": st.column_config.SelectboxColumn(
+                "분류", options=_DEFAULT_SUBCATEGORIES + ["기타"],
+                help="초기구축비/사용료/옵션 등",
+            ),
+            "상세 구분": st.column_config.TextColumn("상세 구분", required=True),
+            "기간": st.column_config.TextColumn("기간",
+                help="1회성 / 매월 / 발생시 / 발생월 / 1개당"),
+            "단가": st.column_config.NumberColumn("단가 (숫자)", min_value=0, format="₩%d"),
+            "단가(텍스트)": st.column_config.TextColumn(
+                "단가(텍스트)",
+                help="숫자로 표현 불가한 단가 (예: '투입기간 X SW개발자 임금')",
+            ),
+            "할인율(%)": st.column_config.NumberColumn("할인율(%)", min_value=0, max_value=100),
+            "금액 텍스트": st.column_config.TextColumn(
+                "금액 텍스트",
+                help="비워두면 자동 계산. '후청구', '협의 금액' 등 텍스트도 입력 가능.",
+            ),
+            "비고": st.column_config.TextColumn("비고"),
+        },
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        key=f"sec_editor_{s_idx}_{sec_idx}",
+    )
+
+    # 편집 결과를 section에 반영
+    section["categories"] = _df_to_section_categories(edited)
+
+    # 소계 미리보기
+    try:
+        sec_obj = MembershipSection.model_validate(section)
+        by_period = section_subtotals_by_period(sec_obj)
+        if by_period:
+            badge_cols = st.columns(len(by_period) + 1)
+            badge_cols[0].caption("**예상 합계**")
+            for col, (period, amt) in zip(badge_cols[1:], by_period.items()):
+                col.metric(period, f"₩{int(amt):,}")
+    except Exception:
+        pass
+
+
+def _generate_membership_quote(state: dict, soffice_available: bool):
+    try:
+        document = MembershipQuoteDocument.model_validate(state)
+    except Exception as e:
+        st.error(f"❌ 데이터 검증 실패: {e}")
+        return
+
+    try:
+        brand = load_brand(PROJECT_ROOT, document.brand_id)
+    except FileNotFoundError as e:
+        st.error(f"❌ 브랜드 로드 실패: {e}")
+        return
+
+    output_dir = PROJECT_ROOT / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    docx_path = output_dir / f"{document.document_id}.docx"
+
+    with st.status("멤버십 견적서 생성 중...", expanded=True) as status:
+        st.write("📝 DOCX 생성 중...")
+        try:
+            render_membership_docx(brand, document, PROJECT_ROOT, docx_path)
+        except Exception as e:
+            status.update(label="❌ DOCX 생성 실패", state="error")
+            st.exception(e)
+            return
+        st.write(f"   ✓ {docx_path.name}")
+
+        pdf_bytes = None
+        if soffice_available:
+            st.write("📑 PDF 변환 중...")
+            try:
+                pdf_path = convert_docx_to_pdf(docx_path, output_dir)
+                pdf_bytes = pdf_path.read_bytes()
+                st.write(f"   ✓ {pdf_path.name}")
+            except Exception as e:
+                st.warning(f"PDF 변환 실패 (DOCX만 다운로드 가능): {e}")
+        status.update(label="✅ 생성 완료", state="complete")
+
+    docx_bytes = docx_path.read_bytes()
+    dl1, dl2 = st.columns(2)
+    with dl1:
+        st.download_button(
+            "📝 DOCX 다운로드",
+            data=docx_bytes,
+            file_name=f"{document.document_id}.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            use_container_width=True,
+        )
+    with dl2:
+        if pdf_bytes:
+            st.download_button(
+                "📑 PDF 다운로드",
+                data=pdf_bytes,
+                file_name=f"{document.document_id}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+        else:
+            st.button("📑 PDF 사용 불가", disabled=True, use_container_width=True)
+
+
+# ═════════════════════════════════════════════════════════════
 # 메인 라우터
 # ═════════════════════════════════════════════════════════════
 
@@ -940,12 +1413,19 @@ def main():
         st.markdown("### 메뉴")
         page = st.radio(
             "페이지",
-            ["📋 견적서 작성", "📦 카탈로그 관리", "⚙ 설정"],
+            [
+                "📋 QR 견적서 작성",
+                "🏢 멤버십 견적서 작성",
+                "📦 카탈로그 관리",
+                "⚙ 설정",
+            ],
             label_visibility="collapsed",
         )
 
-    if page == "📋 견적서 작성":
+    if page == "📋 QR 견적서 작성":
         render_quote_page()
+    elif page == "🏢 멤버십 견적서 작성":
+        render_membership_quote_page()
     elif page == "📦 카탈로그 관리":
         render_catalog_page()
     elif page == "⚙ 설정":
