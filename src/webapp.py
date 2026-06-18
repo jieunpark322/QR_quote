@@ -1114,26 +1114,40 @@ def _save_membership_products(products: list[dict]) -> None:
 
 
 def _load_membership_sample() -> dict:
-    """초기 상태용 샘플 데이터."""
+    """샘플 데이터 (사용자가 '샘플 불러오기' 버튼을 눌렀을 때 사용)."""
     path = PROJECT_ROOT / "data" / "membership_quotes" / "sample.json"
     if path.exists():
-        return json.loads(path.read_text(encoding="utf-8"))
+        sample = json.loads(path.read_text(encoding="utf-8"))
+        sample.setdefault("issued_date", date.today().isoformat())
+        return sample
+    return _empty_membership_state()
+
+
+def _empty_membership_state() -> dict:
+    """빈 초기 상태 — QR 견적서와 동일하게 placeholder만 보이는 상태로 시작."""
     return {
-        "document_id": "MC-NEW",
+        "document_id": "",
         "title": "멤버십 클라우드 견적서",
-        "counterparty": {"label": "제휴사", "name": "", "address": None, "ceo": None, "contact": None},
-        "supplier": None,
+        "issued_date": date.today().isoformat(),
+        "counterparty": {
+            "label": "제휴사", "name": "",
+            "address": None, "ceo": None, "contact": None,
+        },
+        "supplier": {
+            "label": "회사", "name": "",
+            "address": None, "ceo": None, "contact": None,
+        },
         "scenarios": [],
-        "remarks": ["견적유효 : 견적일로부터 15일", "결제조건 : 현금결제 (귀사 결제조건)"],
+        "remarks": [
+            "견적유효 : 견적일로부터 15일",
+            "결제조건 : 현금결제 (귀사 결제조건)",
+        ],
     }
 
 
 def _ensure_membership_state():
     if "mc_doc" not in st.session_state:
-        sample = _load_membership_sample()
-        # issued_date 가 없으면 오늘로
-        sample.setdefault("issued_date", date.today().isoformat())
-        st.session_state.mc_doc = sample
+        st.session_state.mc_doc = _empty_membership_state()
 
 
 def _mc_items_to_df(items: list[dict]) -> pd.DataFrame:
@@ -1251,53 +1265,112 @@ def render_membership_quote_page():
 
     st.title("🏢 멤버십 클라우드 견적서 작성")
     st.caption(
-        "프랜차이즈 B2B 계약용 견적서 — 시나리오(앱&POS 연동 / POS만 등)별 페이지 분리, "
-        "구분-분류-항목 계층, 자동 소계·총계까지 반영됩니다."
+        "프랜차이즈 B2B 계약용 견적서 — 시나리오(예: 앱+POS 연동 / POS만)별 페이지 분리, "
+        "구분→분류→항목 3단계 계층, 자동 소계·총계까지 반영됩니다."
     )
 
+    # ─── 상단 액션 ───
+    act_col1, act_col2 = st.columns([1, 1])
+    with act_col1:
+        if st.button("📋 샘플로 채우기", use_container_width=True,
+                     help="예시 데이터(시나리오 2개)로 폼을 채워봅니다. 현재 입력은 덮어써져요."):
+            st.session_state.mc_doc = _load_membership_sample()
+            st.rerun()
+    with act_col2:
+        if st.button("🗑 전체 초기화", use_container_width=True,
+                     help="모든 입력을 비웁니다."):
+            st.session_state.mc_doc = _empty_membership_state()
+            st.rerun()
+
     # ─── 0. 문서 기본 ───
-    state["document_id"] = st.text_input(
-        "문서번호", value=state.get("document_id", "MC-NEW"), key="mc_doc_id",
-    )
-    state["title"] = st.text_input(
-        "견적서 제목", value=state.get("title", "멤버십 클라우드 견적서"),
-        key="mc_title",
-    )
+    doc_col1, doc_col2 = st.columns([1, 2])
+    with doc_col1:
+        state["document_id"] = st.text_input(
+            "문서번호",
+            value=state.get("document_id", "") or "",
+            key="mc_doc_id",
+            placeholder="비우면 자동 생성 (MC-YYYYMMDD-고객명)",
+        )
+    with doc_col2:
+        state["title"] = st.text_input(
+            "견적서 제목",
+            value=state.get("title", "") or "",
+            key="mc_title",
+            placeholder="예: 멤버십 클라우드 견적서",
+        )
 
     # ─── 1. 양측 발행 정보 ───
     st.subheader("1. 발행 정보 (제휴사 / 회사)")
-    pc1, pc2 = st.columns(2)
-    cp = state.setdefault("counterparty", {"label": "제휴사", "name": ""})
-    sup = state.setdefault("supplier", None)
-    if sup is None:
-        sup = {
-            "label": "회사",
-            "name": "(주)소프트먼트",
-            "address": "서울특별시 금천구 가산디지털1로 145 에이스하이엔드타워3차 905호",
-            "ceo": "장하일, 정재훈",
-            "contact": "박지은 (QR사업부 매니저)",
-        }
-        state["supplier"] = sup
 
+    cp = state.setdefault("counterparty", {"label": "제휴사", "name": ""})
+    sup = state.setdefault("supplier", {"label": "회사", "name": ""})
+
+    # 회사(우리) 정보 자동 채움 — 브랜드 정보 그대로 가져오기
+    fill_col1, fill_col2 = st.columns([1, 4])
+    with fill_col1:
+        if st.button("⚡ 브랜드 정보로 채우기", use_container_width=True,
+                     help="설정의 브랜드 정보를 회사(우리) 칸에 자동 입력합니다."):
+            try:
+                brand = load_brand(PROJECT_ROOT, state.get("brand_id", "softment"))
+                sup["name"] = brand.company.name_ko
+                sup["address"] = brand.company.address
+                sup["ceo"] = brand.company.ceo
+                sup["contact"] = (
+                    f"{brand.contact_person.name} ({brand.contact_person.title})"
+                    if brand.contact_person and brand.contact_person.title
+                    else (brand.contact_person.name if brand.contact_person else None)
+                )
+                st.rerun()
+            except FileNotFoundError:
+                st.error("브랜드 정보를 찾을 수 없어요. '⚙ 설정' 페이지에서 먼저 입력해주세요.")
+
+    pc1, pc2 = st.columns(2)
     with pc1:
         st.markdown("**제휴사 (고객)**")
-        cp["name"] = st.text_input("회사명", cp.get("name", ""), key="mc_cp_name",
-                                   placeholder="예: (주)○○○○")
-        cp["ceo"] = st.text_input("대표이사", cp.get("ceo") or "", key="mc_cp_ceo")
-        cp["address"] = st.text_input("주소", cp.get("address") or "", key="mc_cp_addr")
-        cp["contact"] = st.text_input("담당자", cp.get("contact") or "", key="mc_cp_contact")
+        cp["name"] = st.text_input(
+            "회사명 *", value=cp.get("name") or "", key="mc_cp_name",
+            placeholder="예: 주식회사 ○○",
+        )
+        cp["ceo"] = st.text_input(
+            "대표이사", value=cp.get("ceo") or "", key="mc_cp_ceo",
+            placeholder="예: 홍길동",
+        )
+        cp["address"] = st.text_input(
+            "주소", value=cp.get("address") or "", key="mc_cp_addr",
+            placeholder="예: 서울특별시 ○○구 ○○로 ○○",
+        )
+        cp["contact"] = st.text_input(
+            "담당자", value=cp.get("contact") or "", key="mc_cp_contact",
+            placeholder="예: 김담당 (구매팀장)",
+        )
     with pc2:
         st.markdown("**회사 (우리)**")
-        sup["name"] = st.text_input("회사명", sup.get("name", ""), key="mc_sup_name")
-        sup["ceo"] = st.text_input("대표이사", sup.get("ceo") or "", key="mc_sup_ceo")
-        sup["address"] = st.text_input("주소", sup.get("address") or "", key="mc_sup_addr")
-        sup["contact"] = st.text_input("담당자", sup.get("contact") or "", key="mc_sup_contact")
+        sup["name"] = st.text_input(
+            "회사명", value=sup.get("name") or "", key="mc_sup_name",
+            placeholder="예: (주)소프트먼트  — 위 '⚡ 브랜드 정보로 채우기' 활용 가능",
+        )
+        sup["ceo"] = st.text_input(
+            "대표이사", value=sup.get("ceo") or "", key="mc_sup_ceo",
+            placeholder="예: 장하일, 정재훈",
+        )
+        sup["address"] = st.text_input(
+            "주소", value=sup.get("address") or "", key="mc_sup_addr",
+            placeholder="예: 서울특별시 ○○구 ○○로 ○○",
+        )
+        sup["contact"] = st.text_input(
+            "담당자", value=sup.get("contact") or "", key="mc_sup_contact",
+            placeholder="예: 박지은 (QR사업부 매니저)",
+        )
 
     # ─── 2. 시나리오 (탭) ───
-    st.subheader("2. 시나리오 (페이지별로 분리됨)")
+    st.subheader("2. 시나리오 (PDF에서 페이지별로 분리됨)")
+    st.caption(
+        "💡 한 견적서 안에 여러 시나리오를 넣어 비교 견적을 제공할 수 있어요. "
+        "예: '앱+POS 연동' 시나리오와 'POS만' 시나리오를 한 문서에 묶어 발행."
+    )
     scenarios = state.setdefault("scenarios", [])
 
-    sc_btn1, sc_btn2 = st.columns([1, 5])
+    sc_btn1, _ = st.columns([1, 5])
     with sc_btn1:
         if st.button("+ 시나리오 추가", use_container_width=True):
             scenarios.append({
@@ -1309,7 +1382,10 @@ def render_membership_quote_page():
             st.rerun()
 
     if not scenarios:
-        st.info("시나리오가 없습니다. '+ 시나리오 추가' 버튼을 눌러 시작하세요.")
+        st.info(
+            "아직 시나리오가 없어요. '+ 시나리오 추가' 를 눌러 시작하거나, "
+            "상단 '📋 샘플로 채우기' 로 예시 구조를 먼저 확인할 수 있어요."
+        )
     else:
         tab_labels = [(sc.get("name") or f"시나리오 {i+1}") for i, sc in enumerate(scenarios)]
         tabs = st.tabs(tab_labels)
@@ -1489,6 +1565,15 @@ def _render_section_editor(s_idx: int, sec_idx: int, section: dict,
 
 
 def _generate_membership_quote(state: dict, soffice_available: bool):
+    # 문서번호 비어있으면 자동 생성 (QR 견적서와 동일 패턴)
+    if not (state.get("document_id") or "").strip():
+        try:
+            issued = date.fromisoformat(state.get("issued_date", date.today().isoformat()))
+        except (TypeError, ValueError):
+            issued = date.today()
+        cp_name = ((state.get("counterparty") or {}).get("name") or "고객").strip()
+        cp_short = "".join(c for c in cp_name if c.isalnum())[:8] or "고객"
+        state["document_id"] = f"MC-{issued.strftime('%Y%m%d')}-{cp_short}"
     try:
         document = MembershipQuoteDocument.model_validate(state)
     except Exception as e:
