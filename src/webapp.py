@@ -1238,6 +1238,27 @@ def _section_to_flat_items(section: dict) -> list[dict]:
     return flat
 
 
+def _add_blank_row_to_section(section: dict,
+                              default_subcategory: str = "초기구축비") -> None:
+    """빈 항목 한 줄 추가. 사용자가 수정해서 진짜 항목으로 만듦."""
+    section.setdefault("categories", [])
+    target_cat = None
+    for cat in section["categories"]:
+        if cat.get("name") == default_subcategory:
+            target_cat = cat
+            break
+    if target_cat is None:
+        target_cat = {
+            "name": default_subcategory,
+            "items": [],
+            "show_subtotal": default_subcategory != "옵션",
+        }
+        section["categories"].append(target_cat)
+    target_cat.setdefault("items", []).append({
+        "name": "(새 항목 — 클릭해서 수정)",
+    })
+
+
 def _build_mc_document(state: dict) -> MembershipQuoteDocument:
     """session_state.mc_doc 를 Pydantic 객체로 변환."""
     return MembershipQuoteDocument.model_validate(state)
@@ -1450,19 +1471,24 @@ def _render_scenario_editor(s_idx: int, scenario: dict, products: list[dict]) ->
                          expanded=True):
             _render_section_editor(s_idx, sec_idx, section, products)
 
-    # 시나리오 합계 — 공급가액 / 부가세 / 합계 금액
+    # 시나리오 합계 — 공급가액 / 부가세 / 합계 금액 (샘플 로드 시에도 항상 정확 반영)
     try:
         sc_obj = MembershipScenario.model_validate(scenario)
+    except Exception as e:  # noqa: BLE001
+        st.warning(f"⚠ 시나리오 데이터 검증 실패: {e}")
+        return
+    try:
         vat_rate = load_labels(PROJECT_ROOT).quote.vat_rate
-        subtotal, vat, total = scenario_vat_and_total(sc_obj, vat_rate)
-        if subtotal:
-            st.divider()
-            m1, m2, m3 = st.columns(3)
-            m1.metric("공급가액", f"₩{int(subtotal):,}")
-            m2.metric(f"부가세 ({int(vat_rate * 100)}%)", f"₩{int(vat):,}")
-            m3.metric("합계 금액", f"₩{int(total):,}")
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001
+        vat_rate = 0.10
+    subtotal, vat, total = scenario_vat_and_total(sc_obj, vat_rate)
+
+    st.divider()
+    st.caption(f"📊 **이 시나리오의 합계** (모든 기간 합산)")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("공급가액", f"₩{int(subtotal):,}")
+    m2.metric(f"부가세 ({int(vat_rate * 100)}%)", f"₩{int(vat):,}")
+    m3.metric("합계 금액", f"₩{int(total):,}")
 
 
 def _render_section_editor(s_idx: int, sec_idx: int, section: dict,
@@ -1484,10 +1510,10 @@ def _render_section_editor(s_idx: int, sec_idx: int, section: dict,
     flat_items = _section_to_flat_items(section)
     df = _mc_items_to_df(flat_items)
 
-    # 카탈로그 빠른 추가 (드롭다운)
+    # 카탈로그 빠른 추가 (드롭다운) + 빈 행 추가
     section_name = section.get("name", "")
     matching = [p for p in products if p.get("section") == section_name]
-    quick_col1, quick_col2 = st.columns([6, 1])
+    quick_col1, quick_col2, quick_col3 = st.columns([5, 1.3, 1.3])
     with quick_col1:
         if matching:
             options = list(range(len(matching)))
@@ -1503,25 +1529,37 @@ def _render_section_editor(s_idx: int, sec_idx: int, section: dict,
                 label_visibility="collapsed",
             )
         else:
-            st.caption(f"'{section_name}' 매칭되는 카탈로그 항목이 없습니다. (카탈로그의 section 필드 일치 필요)")
+            st.caption(
+                f"'{section_name}' 와 매칭되는 카탈로그 항목이 없습니다. "
+                "오른쪽 '+ 빈 행' 으로 직접 추가할 수 있어요."
+            )
             picked = None
     with quick_col2:
-        if st.button("+ 추가", key=f"sec_addrow_{s_idx}_{sec_idx}",
-                     use_container_width=True, disabled=picked is None):
-            p = matching[picked]
-            new_row = {
-                "분류": p.get("subcategory", "기타"),
-                "상세 구분": p["name"],
-                "기간": p.get("billing_period", ""),
-                "단가": p.get("unit_price"),
-                "단가(텍스트)": p.get("unit_price_text", ""),
-                "할인율(%)": None,
-                "금액 텍스트": p.get("default_amount_text", ""),
-                "비고": p.get("notes", ""),
-            }
-            df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-            # 즉시 section 에 반영
-            section["categories"] = _df_to_section_categories(df)
+        if st.button("+ 카탈로그 추가", key=f"sec_addrow_{s_idx}_{sec_idx}",
+                     use_container_width=True,
+                     help="좌측 드롭다운에서 항목을 선택한 뒤 누르세요"):
+            if picked is None or not matching:
+                st.warning("⚠ 좌측 드롭다운에서 카탈로그 항목을 먼저 선택해주세요.")
+            else:
+                p = matching[picked]
+                new_row = {
+                    "분류": p.get("subcategory", "기타"),
+                    "상세 구분": p["name"],
+                    "기간": p.get("billing_period", ""),
+                    "단가": p.get("unit_price"),
+                    "단가(텍스트)": p.get("unit_price_text", ""),
+                    "할인율(%)": None,
+                    "금액 텍스트": p.get("default_amount_text", ""),
+                    "비고": p.get("notes", ""),
+                }
+                df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+                section["categories"] = _df_to_section_categories(df)
+                st.rerun()
+    with quick_col3:
+        if st.button("+ 빈 행", key=f"sec_addblank_{s_idx}_{sec_idx}",
+                     use_container_width=True,
+                     help="빈 행을 추가하고 직접 입력합니다"):
+            _add_blank_row_to_section(section)
             st.rerun()
 
     # 표 편집
