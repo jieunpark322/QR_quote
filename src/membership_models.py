@@ -4,7 +4,7 @@
 
   MembershipQuoteDocument
    └ scenarios: list[MembershipScenario]            (시나리오 — 엑셀 시트 1개)
-      └ sections: list[MembershipSection]           (구분 — 예: PAYCO 멤버십 클라우드)
+      └ sections: list[MembershipSection]           (구분 — 예: 멤버십 클라우드)
          └ categories: list[MembershipCategory]     (분류 — 초기구축비/사용료/옵션)
             └ items: list[MembershipLineItem]       (상세 구분 — 실제 행)
                └ sub_items: list[MembershipSubItem] (종량제 하위 단가들)
@@ -60,7 +60,7 @@ class MembershipCategory(BaseModel):
 
 
 class MembershipSection(BaseModel):
-    """구분 (PAYCO 멤버십 클라우드 등). 구분별 예상 총 금액이 자동 표시됨."""
+    """구분 (멤버십 클라우드 등). 구분별 예상 총 금액이 자동 표시됨."""
     name: str
     categories: list[MembershipCategory] = Field(default_factory=list)
     show_section_total: bool = True  # "예상 총 금액" 표시 여부

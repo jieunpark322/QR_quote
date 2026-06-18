@@ -6,7 +6,7 @@
   "title": "멤버십 클라우드 견적서",
   "counterparty": {
     "label": "제휴사",
-    "name": "(주)걸작떡볶이치킨",
+    "name": "(주)예시고객",
     "address": "서울특별시 ○○구 ○○로 ○○",
     "ceo": "○○○",
     "contact": "○○○ 매니저"
@@ -21,10 +21,10 @@
   "scenarios": [
     {
       "name": "앱&POS 연동 (멤버십 + 오더)",
-      "subject": "항목 : 멤버십 클라우드 솔루션 + PAYCO 오더 솔루션",
+      "subject": "항목 : 멤버십 클라우드 솔루션 + 오더 솔루션",
       "sections": [
         {
-          "name": "PAYCO 멤버십 클라우드",
+          "name": "멤버십 클라우드",
           "categories": [
             {
               "name": "초기구축비",
@@ -93,22 +93,18 @@
               "show_subtotal": false,
               "items": [
                 {
-                  "name": "페이코 채널링 연동",
+                  "name": "결제 채널 연동 (1차)",
                   "billing_period": "1회성",
                   "unit_price_text": "무상 제공",
-                  "amount_text": "무상제공"
+                  "amount_text": "무상제공",
+                  "notes": "기본 1개 채널 무상"
                 },
                 {
-                  "name": "카카오페이 채널링 연동",
-                  "billing_period": "1회성",
+                  "name": "결제 채널 추가 연동 (2차 이후)",
+                  "billing_period": "채널당",
                   "unit_price": 1000000,
-                  "amount_text": "-"
-                },
-                {
-                  "name": "네이버페이 채널링 연동",
-                  "billing_period": "1회성",
-                  "unit_price": 1000000,
-                  "amount_text": "-"
+                  "amount_text": "-",
+                  "notes": "발생시"
                 },
                 {
                   "name": "온/오프 모듈 추가 연동 (2차 이후 연동)",
@@ -122,7 +118,7 @@
           ]
         },
         {
-          "name": "PAYCO 오더 솔루션",
+          "name": "오더 솔루션",
           "categories": [
             {
               "name": "초기구축비",
@@ -169,7 +165,7 @@
       "subject": "항목 : 멤버십 클라우드 솔루션 (POS 연동)",
       "sections": [
         {
-          "name": "PAYCO 멤버십 클라우드",
+          "name": "멤버십 클라우드",
           "categories": [
             {
               "name": "초기구축비",

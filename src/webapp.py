@@ -705,7 +705,7 @@ def _render_qr_catalog_editor():
 def _render_membership_catalog_editor():
     """멤버십 견적서용 계층 카탈로그 편집기 (구분/분류 컬럼 포함)."""
     st.caption(
-        "구분(예: PAYCO 멤버십 클라우드)과 분류(초기구축비/사용료/옵션)로 묶인 상품 목록입니다. "
+        "구분(예: 멤버십 클라우드)과 분류(초기구축비/사용료/옵션)로 묶인 상품 목록입니다. "
         "멤버십 견적서 작성 화면에서 '구분' 이 일치하는 항목만 드롭다운에 나타납니다."
     )
 
@@ -713,7 +713,7 @@ def _render_membership_catalog_editor():
     if not products:
         df = pd.DataFrame([{
             "code": "NEW-CODE",
-            "section": "PAYCO 멤버십 클라우드",
+            "section": "멤버십 클라우드",
             "subcategory": "초기구축비",
             "name": "(여기를 클릭해서 수정)",
             "billing_period": "1회성",
@@ -743,7 +743,7 @@ def _render_membership_catalog_editor():
 
     # 기존 카탈로그에 등록된 구분들 + 기본값
     existing_sections = sorted({p.get("section", "") for p in products if p.get("section")})
-    section_options = existing_sections or ["PAYCO 멤버십 클라우드", "PAYCO 오더 솔루션"]
+    section_options = existing_sections or ["멤버십 클라우드", "오더 솔루션"]
 
     edited = st.data_editor(
         df[["code", "section", "subcategory", "name", "billing_period",
@@ -1282,7 +1282,7 @@ def render_membership_quote_page():
     with pc1:
         st.markdown("**제휴사 (고객)**")
         cp["name"] = st.text_input("회사명", cp.get("name", ""), key="mc_cp_name",
-                                   placeholder="예: (주)걸작떡볶이치킨")
+                                   placeholder="예: (주)○○○○")
         cp["ceo"] = st.text_input("대표이사", cp.get("ceo") or "", key="mc_cp_ceo")
         cp["address"] = st.text_input("주소", cp.get("address") or "", key="mc_cp_addr")
         cp["contact"] = st.text_input("담당자", cp.get("contact") or "", key="mc_cp_contact")
@@ -1357,7 +1357,7 @@ def _render_scenario_editor(s_idx: int, scenario: dict, products: list[dict]) ->
     scenario["subject"] = st.text_input(
         "항목 부제 (선택)", value=scenario.get("subject") or "",
         key=f"sc_subject_{s_idx}",
-        placeholder="예: 멤버십 클라우드 솔루션 + PAYCO 오더 솔루션",
+        placeholder="예: 멤버십 클라우드 솔루션 + 오더 솔루션",
     )
 
     # 구분(섹션) 목록
@@ -1391,7 +1391,7 @@ def _render_section_editor(s_idx: int, sec_idx: int, section: dict,
         section["name"] = st.text_input(
             "구분 이름", value=section.get("name", ""),
             key=f"sec_name_{s_idx}_{sec_idx}",
-            placeholder="예: PAYCO 멤버십 클라우드",
+            placeholder="예: 멤버십 클라우드",
         )
     with sec2:
         if st.button("❌ 구분 삭제", key=f"sec_del_{s_idx}_{sec_idx}",

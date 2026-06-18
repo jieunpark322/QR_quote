@@ -4,7 +4,7 @@
   "products": [
     {
       "code": "MC-INIT-SERVER",
-      "section": "PAYCO 멤버십 클라우드",
+      "section": "멤버십 클라우드",
       "subcategory": "초기구축비",
       "name": "서버/NW 인프라비용",
       "billing_period": "1회성",
@@ -13,7 +13,7 @@
     },
     {
       "code": "MC-INIT-SETUP",
-      "section": "PAYCO 멤버십 클라우드",
+      "section": "멤버십 클라우드",
       "subcategory": "초기구축비",
       "name": "브랜드 초기 설정 / 테스트 / 검수 비용",
       "billing_period": "1회성",
@@ -22,7 +22,7 @@
     },
     {
       "code": "MC-INIT-MIGRATION",
-      "section": "PAYCO 멤버십 클라우드",
+      "section": "멤버십 클라우드",
       "subcategory": "초기구축비",
       "name": "마이그레이션",
       "billing_period": "발생시",
@@ -34,7 +34,7 @@
 
     {
       "code": "MC-USE-MEMBER",
-      "section": "PAYCO 멤버십 클라우드",
+      "section": "멤버십 클라우드",
       "subcategory": "사용료",
       "name": "회원관리기능 사용료",
       "billing_period": "매월",
@@ -44,7 +44,7 @@
     },
     {
       "code": "MC-USE-CRM",
-      "section": "PAYCO 멤버십 클라우드",
+      "section": "멤버십 클라우드",
       "subcategory": "사용료",
       "name": "CRM 솔루션 사용료",
       "billing_period": "매월",
@@ -54,7 +54,7 @@
     },
     {
       "code": "MC-USE-METERED",
-      "section": "PAYCO 멤버십 클라우드",
+      "section": "멤버십 클라우드",
       "subcategory": "사용료",
       "name": "선택기능 사용료(종량제)",
       "billing_period": "매월",
@@ -72,7 +72,7 @@
     },
     {
       "code": "MC-USE-CUSTOM",
-      "section": "PAYCO 멤버십 클라우드",
+      "section": "멤버십 클라우드",
       "subcategory": "사용료",
       "name": "브랜드사 요청에 의한 커스텀 개발 비용",
       "billing_period": "발생월",
@@ -83,37 +83,28 @@
     },
 
     {
-      "code": "MC-OPT-PAYCO",
-      "section": "PAYCO 멤버십 클라우드",
+      "code": "MC-OPT-PAY-CHANNEL-1",
+      "section": "멤버십 클라우드",
       "subcategory": "옵션",
-      "name": "페이코 채널링 연동",
+      "name": "결제 채널 연동 (1차)",
       "billing_period": "1회성",
       "unit_price": null,
       "unit_price_text": "무상 제공",
       "default_amount_text": "무상제공",
-      "notes": "-"
+      "notes": "기본 1개 채널 무상"
     },
     {
-      "code": "MC-OPT-KAKAOPAY",
-      "section": "PAYCO 멤버십 클라우드",
+      "code": "MC-OPT-PAY-CHANNEL-EXTRA",
+      "section": "멤버십 클라우드",
       "subcategory": "옵션",
-      "name": "카카오페이 채널링 연동",
-      "billing_period": "1회성",
+      "name": "결제 채널 추가 연동 (2차 이후)",
+      "billing_period": "채널당",
       "unit_price": 1000000,
-      "notes": "-"
-    },
-    {
-      "code": "MC-OPT-NAVERPAY",
-      "section": "PAYCO 멤버십 클라우드",
-      "subcategory": "옵션",
-      "name": "네이버페이 채널링 연동",
-      "billing_period": "1회성",
-      "unit_price": 1000000,
-      "notes": "-"
+      "notes": "발생시"
     },
     {
       "code": "MC-OPT-EXTRA-MODULE",
-      "section": "PAYCO 멤버십 클라우드",
+      "section": "멤버십 클라우드",
       "subcategory": "옵션",
       "name": "온/오프 모듈 추가 연동 (2차 이후 연동)",
       "billing_period": "1개당",
@@ -123,7 +114,7 @@
 
     {
       "code": "PO-INIT-SETUP",
-      "section": "PAYCO 오더 솔루션",
+      "section": "오더 솔루션",
       "subcategory": "초기구축비",
       "name": "제휴사 오더서비스 초기 시스템 구축",
       "name_detail": "- 브랜드 / 매장 / 메뉴 초기 세팅",
@@ -134,7 +125,7 @@
 
     {
       "code": "PO-USE-ORDER",
-      "section": "PAYCO 오더 솔루션",
+      "section": "오더 솔루션",
       "subcategory": "사용료",
       "name": "오더 솔루션 이용료",
       "name_detail": "- CS 대응\n- 현장 지원",
@@ -144,7 +135,7 @@
     },
     {
       "code": "PO-USE-NOTIFY",
-      "section": "PAYCO 오더 솔루션",
+      "section": "오더 솔루션",
       "subcategory": "사용료",
       "name": "알림톡 발송료",
       "billing_period": "매월",
@@ -155,7 +146,7 @@
     },
     {
       "code": "PO-USE-CUSTOM",
-      "section": "PAYCO 오더 솔루션",
+      "section": "오더 솔루션",
       "subcategory": "사용료",
       "name": "별도 요청에 의한 커스텀 개발 비용",
       "billing_period": "발생월",
