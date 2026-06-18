@@ -85,6 +85,10 @@ AUTOSAVE_DIR = PROJECT_ROOT / "output" / "_autosave"
 QR_AUTOSAVE_PATH = AUTOSAVE_DIR / "qr_quote.json"
 MC_AUTOSAVE_PATH = AUTOSAVE_DIR / "membership_quote.json"
 
+QR_HISTORY_DIR = PROJECT_ROOT / "output" / "_history" / "qr"
+QR_TEMPLATE_DIR = PROJECT_ROOT / "output" / "_templates" / "qr"
+HISTORY_LIMIT = 10
+
 # 자동 저장/복원할 위젯 키들
 QR_FORM_KEYS = [
     "issuer_name", "issuer_phone", "issuer_title", "issuer_email",
@@ -197,6 +201,106 @@ def _mc_autosave_clear() -> None:
         pass
 
 
+def _qr_snapshot_payload() -> dict:
+    """현재 견적서 입력 상태 전체를 직렬화 가능한 dict로."""
+    df = st.session_state.get("items_df")
+    payload = {k: st.session_state.get(k) for k in QR_FORM_KEYS}
+    if df is not None and not df.empty:
+        payload["items"] = df.to_dict(orient="records")
+    return payload
+
+
+def _qr_apply_snapshot(payload: dict) -> None:
+    """저장된 견적서 payload를 session_state에 복원."""
+    items = payload.get("items")
+    if items:
+        try:
+            st.session_state["items_df"] = pd.DataFrame(items)
+        except (ValueError, KeyError):
+            pass
+    for k in QR_FORM_KEYS:
+        v = payload.get(k)
+        if v not in (None, ""):
+            st.session_state[k] = v
+
+
+def _qr_save_history(snapshot: dict, document_id: str) -> None:
+    """견적서 생성 직후 히스토리에 저장. 오래된 것은 정리."""
+    QR_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+    from datetime import datetime
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_id = "".join(c for c in document_id if c.isalnum() or c in "-_")[:40]
+    payload = {
+        **snapshot,
+        "_document_id": document_id,
+        "_saved_at": datetime.now().isoformat(timespec="seconds"),
+        "_subject": st.session_state.get("subject", ""),
+        "_cp_name": st.session_state.get("cp_name", ""),
+    }
+    path = QR_HISTORY_DIR / f"{ts}_{safe_id}.json"
+    _write_json_safe(path, payload)
+    # 오래된 히스토리 정리
+    files = sorted(QR_HISTORY_DIR.glob("*.json"),
+                   key=lambda p: p.stat().st_mtime, reverse=True)
+    for old in files[HISTORY_LIMIT:]:
+        try:
+            old.unlink()
+        except OSError:
+            pass
+
+
+def _qr_list_history() -> list[tuple[Path, dict]]:
+    if not QR_HISTORY_DIR.exists():
+        return []
+    files = sorted(QR_HISTORY_DIR.glob("*.json"),
+                   key=lambda p: p.stat().st_mtime, reverse=True)[:HISTORY_LIMIT]
+    result = []
+    for p in files:
+        data = _read_json_safe(p)
+        if data:
+            result.append((p, data))
+    return result
+
+
+def _qr_save_template(name: str, snapshot: dict) -> bool:
+    name = (name or "").strip()
+    if not name:
+        return False
+    QR_TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
+    safe = "".join(c for c in name if c.isalnum() or c in " -_가-힣")[:60].strip()
+    if not safe:
+        return False
+    from datetime import datetime
+    payload = {
+        **snapshot,
+        "_template_name": name,
+        "_saved_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    path = QR_TEMPLATE_DIR / f"{safe}.json"
+    _write_json_safe(path, payload)
+    return True
+
+
+def _qr_list_templates() -> list[tuple[Path, dict]]:
+    if not QR_TEMPLATE_DIR.exists():
+        return []
+    files = sorted(QR_TEMPLATE_DIR.glob("*.json"),
+                   key=lambda p: p.stat().st_mtime, reverse=True)
+    result = []
+    for p in files:
+        data = _read_json_safe(p)
+        if data:
+            result.append((p, data))
+    return result
+
+
+def _qr_delete_template(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def _inject_beforeunload(active: bool) -> None:
     """작성 중 내용이 있으면 페이지 이탈 시 브라우저 경고를 띄움."""
     from streamlit.components.v1 import html
@@ -221,6 +325,134 @@ def _inject_beforeunload(active: bool) -> None:
 }})();
 </script>
 """, height=0)
+
+
+def _render_qr_history_template_panel() -> None:
+    """견적서 작성 페이지 상단의 '최근/표본 불러오기' UI."""
+    history = _qr_list_history()
+    templates = _qr_list_templates()
+    if not history and not templates:
+        with st.expander("📂 최근 견적서 · 📋 표본", expanded=False):
+            st.caption(
+                "💡 견적서를 한 번 생성하면 여기에 **최근 10개** 가 자동 보관되어 "
+                "다시 불러올 수 있고, 자주 쓰는 형태는 **표본** 으로 저장해 두면 "
+                "다음 견적서 작성 시 끌어와서 쓸 수 있어요."
+            )
+            tpl_name = st.text_input(
+                "표본 이름", placeholder="예: 단가 표준안",
+                key="qr_tpl_name_input",
+                label_visibility="collapsed",
+            )
+            if st.button("💾 현재 입력을 표본으로 저장",
+                         use_container_width=True, key="qr_tpl_save_empty"):
+                if _qr_save_template(tpl_name, _qr_snapshot_payload()):
+                    st.success(f"✅ 표본 저장: {tpl_name}")
+                    st.rerun()
+                else:
+                    st.warning("표본 이름을 입력해 주세요.")
+        return
+
+    with st.expander(
+        f"📂 최근 견적서 ({len(history)}) · 📋 표본 ({len(templates)})",
+        expanded=False,
+    ):
+        tab_hist, tab_tpl = st.tabs(["📂 최근 견적서", "📋 표본 (수기 저장)"])
+
+        with tab_hist:
+            if not history:
+                st.caption("아직 생성한 견적서가 없습니다. 한 번 생성하면 여기에 자동 저장됩니다.")
+            else:
+                st.caption("견적서를 생성하면 자동으로 최근 10개까지 보관됩니다. 클릭해서 이어서 편집할 수 있어요.")
+                options = list(range(len(history)))
+
+                def _fmt_hist(i: int) -> str:
+                    _, data = history[i]
+                    saved = (data.get("_saved_at") or "")[:16].replace("T", " ")
+                    subj = data.get("_subject") or "(건명 없음)"
+                    cp = data.get("_cp_name") or "(수신처 없음)"
+                    return f"🕐 {saved}  ·  {cp}  ·  {subj}"
+
+                sel_h = st.selectbox(
+                    "불러올 견적서", options=options,
+                    format_func=_fmt_hist, index=None,
+                    placeholder="선택하세요...", key="qr_hist_select",
+                )
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    if st.button("📥 선택한 견적서 불러오기",
+                                 use_container_width=True,
+                                 disabled=sel_h is None,
+                                 key="qr_hist_load"):
+                        _, data = history[sel_h]
+                        _qr_apply_snapshot(data)
+                        st.success("✅ 견적서를 불러왔습니다.")
+                        st.rerun()
+                with col_b:
+                    if st.button("🗑 선택한 견적서 히스토리에서 삭제",
+                                 use_container_width=True,
+                                 disabled=sel_h is None,
+                                 key="qr_hist_del"):
+                        path, _ = history[sel_h]
+                        try:
+                            path.unlink(missing_ok=True)
+                        except OSError:
+                            pass
+                        st.rerun()
+
+        with tab_tpl:
+            st.caption(
+                "**표본** 은 자주 쓰는 견적서 형태를 수기로 저장해 두는 공간입니다. "
+                "현재 입력값을 그대로 표본으로 저장하거나, 저장된 표본을 끌어와서 시작할 수 있어요."
+            )
+            save_col1, save_col2 = st.columns([3, 2])
+            with save_col1:
+                tpl_name = st.text_input(
+                    "표본 이름", placeholder="예: 단가 표준안 / 가맹점 A 견적",
+                    key="qr_tpl_name", label_visibility="collapsed",
+                )
+            with save_col2:
+                if st.button("💾 현재 입력을 표본으로 저장",
+                             use_container_width=True, key="qr_tpl_save"):
+                    if _qr_save_template(tpl_name, _qr_snapshot_payload()):
+                        st.success(f"✅ 표본 저장: {tpl_name}")
+                        st.rerun()
+                    else:
+                        st.warning("표본 이름을 입력해 주세요.")
+            st.divider()
+            if templates:
+                options = list(range(len(templates)))
+
+                def _fmt_tpl(i: int) -> str:
+                    _, data = templates[i]
+                    name = data.get("_template_name") or templates[i][0].stem
+                    saved = (data.get("_saved_at") or "")[:10]
+                    return f"📋 {name}  ·  {saved}"
+
+                sel_t = st.selectbox(
+                    "저장된 표본", options=options,
+                    format_func=_fmt_tpl, index=None,
+                    placeholder="선택하세요...", key="qr_tpl_select",
+                )
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    if st.button("📥 선택한 표본으로 시작",
+                                 use_container_width=True,
+                                 disabled=sel_t is None,
+                                 key="qr_tpl_load"):
+                        _, data = templates[sel_t]
+                        _qr_apply_snapshot(data)
+                        st.success("✅ 표본을 불러왔습니다.")
+                        st.rerun()
+                with col_b:
+                    if st.button("🗑 선택한 표본 삭제",
+                                 use_container_width=True,
+                                 disabled=sel_t is None,
+                                 key="qr_tpl_del"):
+                        path, _ = templates[sel_t]
+                        _qr_delete_template(path)
+                        st.rerun()
+            else:
+                st.caption("저장된 표본이 없습니다.")
 
 
 # ═════════════════════════════════════════════════════════════
@@ -424,6 +656,9 @@ def render_quote_page():
     st.title("📋 견적서 자동 생성")
     st.caption("폼을 채우고 '견적서 생성' 버튼을 누르면 DOCX/PDF 가 다운로드됩니다.")
 
+    # ─── 최근 견적서 / 표본 불러오기 ───
+    _render_qr_history_template_panel()
+
     st.subheader("0. 발행 담당자 정보")
     st.caption(
         "이번 견적서에 표시될 **소프트먼트 측 담당자** 정보입니다. "
@@ -519,6 +754,41 @@ def render_quote_page():
         st.info("아직 품목이 없습니다. 위 드롭다운에서 카탈로그 상품을 추가하거나 '+ 빈 행' 을 누르세요.")
         edited_df = st.session_state.items_df
     else:
+        # 행 순서 변경 — 행 선택 후 ↑/↓ 버튼으로 이동
+        df_for_order = st.session_state.items_df.reset_index(drop=True)
+        if len(df_for_order) > 1:
+            order_label, order_up, order_down = st.columns([5, 0.7, 0.7])
+            with order_label:
+                row_options = list(range(len(df_for_order)))
+                sel_row = st.selectbox(
+                    "🔃 순서 변경할 행",
+                    options=row_options,
+                    format_func=lambda i: (
+                        f"{i + 1}. {df_for_order.at[i, '항목'] or '(이름 없음)'}"
+                    ),
+                    index=None, placeholder="행을 선택해 위/오른쪽 버튼으로 이동...",
+                    key="row_reorder_sel",
+                    label_visibility="collapsed",
+                )
+            with order_up:
+                if st.button("⬆ 위로", use_container_width=True,
+                             disabled=sel_row is None or sel_row == 0,
+                             key="row_move_up"):
+                    df = st.session_state.items_df.reset_index(drop=True)
+                    df.iloc[[sel_row - 1, sel_row]] = df.iloc[[sel_row, sel_row - 1]].values
+                    st.session_state.items_df = df
+                    st.session_state["row_reorder_sel"] = sel_row - 1
+                    st.rerun()
+            with order_down:
+                if st.button("⬇ 아래로", use_container_width=True,
+                             disabled=sel_row is None or sel_row == len(df_for_order) - 1,
+                             key="row_move_down"):
+                    df = st.session_state.items_df.reset_index(drop=True)
+                    df.iloc[[sel_row + 1, sel_row]] = df.iloc[[sel_row, sel_row + 1]].values
+                    st.session_state.items_df = df
+                    st.session_state["row_reorder_sel"] = sel_row + 1
+                    st.rerun()
+
         # 공급가 컬럼을 계산해서 디스플레이용 DataFrame 생성
         display_df = st.session_state.items_df.copy()
         # 분류 값이 비었으면 기본 '품목'으로 채움
@@ -530,30 +800,35 @@ def render_quote_page():
             display_df,
             column_config={
                 "분류": st.column_config.SelectboxColumn(
-                    "분류", options=ITEM_KINDS, required=True,
+                    "분류", options=ITEM_KINDS, required=True, width="small",
                     help="'💰 할인' 선택 시 단가는 음수로 입력. 할인 행은 아래 빨강 박스에 음영 처리됩니다.",
                 ),
-                "항목": st.column_config.TextColumn("항목", required=True),
-                "설명": st.column_config.TextColumn("설명"),
+                "항목": st.column_config.TextColumn("항목", required=True, width="medium"),
+                "설명": st.column_config.TextColumn("설명", width="large"),
                 "단가": st.column_config.NumberColumn(
-                    "단가", step=1000, format="₩%,d",
+                    "단가", step=1000, format="₩%,d", width="small",
                     help="단가 (양수). '💰 할인' 분류는 자동 차감됩니다.",
                 ),
-                "기간(횟수)": st.column_config.NumberColumn("기간(횟수)", min_value=0, step=1),
-                "수량": st.column_config.NumberColumn("수량", min_value=0, step=1),
+                "기간(횟수)": st.column_config.NumberColumn(
+                    "기간(횟수)", min_value=0, step=1, width="small",
+                ),
+                "수량": st.column_config.NumberColumn(
+                    "수량", min_value=0, step=1, width="small",
+                ),
                 "할인율(%)": st.column_config.NumberColumn(
                     "할인율(%)", min_value=0, max_value=100, step=1, format="%d%%",
+                    width="small",
                     help="항목별 할인율 (0~100). 할인금액이 입력되면 할인금액이 우선됩니다.",
                 ),
                 "할인금액": st.column_config.NumberColumn(
-                    "할인금액", min_value=0, step=1000, format="₩%,d",
+                    "할인금액", min_value=0, step=1000, format="₩%,d", width="small",
                     help="항목별 할인 금액 (양수). 비워두면 할인율이 적용됩니다.",
                 ),
                 "공급가": st.column_config.NumberColumn(
-                    "공급가", disabled=True, format="₩%,d",
+                    "공급가", disabled=True, format="₩%,d", width="small",
                     help="(수량 × 기간 × 단가) − 항목별 할인",
                 ),
-                "비고": st.column_config.TextColumn("비고"),
+                "비고": st.column_config.TextColumn("비고", width="medium"),
             },
             num_rows="dynamic",
             use_container_width=True,
@@ -857,6 +1132,9 @@ def _generate_quote(**kwargs):
         return
     document_id, docx_bytes, pdf_bytes = result
 
+    # 최근 견적서 히스토리에 저장 (입력 데이터 그대로 복원 가능)
+    _qr_save_history(_qr_snapshot_payload(), document_id)
+
     dl1, dl2 = st.columns(2)
     with dl1:
         st.download_button(
@@ -988,6 +1266,7 @@ def _render_qr_catalog_editor():
         num_rows="dynamic",
         use_container_width=True,
         hide_index=True,
+        height=720,
         key="catalog_editor_qr",
     )
 
@@ -1104,6 +1383,7 @@ def _render_membership_catalog_editor():
         num_rows="dynamic",
         use_container_width=True,
         hide_index=True,
+        height=720,
         key="catalog_editor_mc",
     )
 
@@ -1154,11 +1434,7 @@ def _render_membership_catalog_editor():
                 "'멤버십 견적서 작성' 페이지로 가면 즉시 반영됩니다."
             )
     with col_info:
-        st.caption(
-            "ℹ️ **종량제 하위 항목**(SMS/LMS 등) 은 이 표에서 편집하지 않습니다. "
-            "기존 항목의 `sub_items` 는 저장 시 자동으로 보존됩니다. "
-            "새 종량제 항목 추가가 필요하면 `catalog/membership_products.json` 직접 편집을 권장합니다."
-        )
+        st.caption("")
 
 
 # ═════════════════════════════════════════════════════════════

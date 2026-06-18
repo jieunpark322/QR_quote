@@ -335,11 +335,60 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
         if c[5] or (c[6] is not None and c[6](items))
     ]
 
-    # 사용 가능 너비(17.4cm)에 맞춰 비례 재분배
-    USABLE_WIDTH = 17.4
-    total_base = sum(c[2] for c in active_cols)
-    scale = USABLE_WIDTH / total_base
-    widths = [Cm(c[2] * scale) for c in active_cols]
+    # 콘텐츠 길이 기반 컬럼 너비 — 짧은 컬럼은 좁게, 긴(설명·항목·비고) 컬럼은 넓게
+    USABLE_WIDTH = 18.4  # 좌우 여백 1.4cm 가정
+    CHAR_CM = 0.22       # 한글 한 글자 대략 폭
+
+    # 컬럼 키별 min/max 범위 (가시성 보장)
+    range_by_key = {
+        "name":        (2.4, 5.0),
+        "description": (3.0, 7.5),
+        "unit_price":  (2.0, 3.0),
+        "period":      (1.0, 1.5),
+        "qty":         (0.9, 1.3),
+        "discount":    (1.2, 1.8),
+        "amount":      (2.2, 3.2),
+        "notes":       (1.8, 4.5),
+    }
+
+    def _max_line_len(strings):
+        m = 0
+        for s in strings:
+            if not s:
+                continue
+            for ln in str(s).split("\n"):
+                m = max(m, len(ln))
+        return m
+
+    raw_widths = []
+    for c in active_cols:
+        key, header, base, _, getter, _, _ = c
+        content_strings = [str(getter(it)) for it in items] + [header]
+        content_len = _max_line_len(content_strings)
+        # 헤더와 콘텐츠 중 큰 쪽 + 약간의 여유
+        raw = max(content_len * CHAR_CM, len(header) * CHAR_CM) + 0.3
+        lo, hi = range_by_key.get(key, (base * 0.7, base * 1.3))
+        raw_widths.append(min(max(raw, lo), hi))
+
+    total = sum(raw_widths)
+    if total > USABLE_WIDTH:
+        # 비례 축소
+        scale = USABLE_WIDTH / total
+        raw_widths = [w * scale for w in raw_widths]
+    else:
+        # 남는 공간은 '긴' 컬럼(설명·항목·비고)에 가중 분배
+        slack_weights_by_key = {
+            "description": 2.5, "name": 1.0, "notes": 1.5,
+            "amount": 0.3, "unit_price": 0.3,
+        }
+        weights = [slack_weights_by_key.get(c[0], 0.0) for c in active_cols]
+        wsum = sum(weights)
+        if wsum > 0:
+            slack = USABLE_WIDTH - total
+            raw_widths = [w + slack * wt / wsum
+                          for w, wt in zip(raw_widths, weights)]
+
+    widths = [Cm(round(w, 2)) for w in raw_widths]
     headers = [c[1] for c in active_cols]
 
     table = doc.add_table(rows=1 + len(items), cols=len(headers))
