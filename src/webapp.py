@@ -127,9 +127,11 @@ def _save_labels(labels_dict: dict) -> None:
 # ═════════════════════════════════════════════════════════════
 
 # 편집 가능 컬럼 (공급가는 계산 결과라 별도)
-ITEM_COLUMNS = ["분류", "항목", "설명", "단가", "기간(횟수)", "수량", "비고"]
+ITEM_COLUMNS = ["분류", "항목", "설명", "단가", "기간(횟수)", "수량",
+                "할인율(%)", "할인금액", "비고"]
 # 화면 표시 순서 (공급가 포함)
-DISPLAY_COLUMNS = ["분류", "항목", "설명", "단가", "기간(횟수)", "수량", "공급가", "비고"]
+DISPLAY_COLUMNS = ["분류", "항목", "설명", "단가", "기간(횟수)", "수량",
+                   "할인율(%)", "할인금액", "공급가", "비고"]
 
 # 분류 선택지
 ITEM_KIND_NORMAL = "📋 품목"
@@ -145,6 +147,8 @@ def _empty_items_df() -> pd.DataFrame:
         "단가": "Int64",
         "기간(횟수)": "Int64",
         "수량": "Int64",
+        "할인율(%)": "Int64",
+        "할인금액": "Int64",
         "비고": "string",
     })
 
@@ -162,6 +166,8 @@ def _add_catalog_row(product: dict):
         "단가": int(product.get("unit_price", 0)),
         "기간(횟수)": 1,
         "수량": 1,
+        "할인율(%)": None,
+        "할인금액": None,
         "비고": "",
     }
     df = st.session_state.items_df
@@ -190,6 +196,8 @@ def _add_discount_row():
         "단가": -500000,
         "기간(횟수)": None,
         "수량": 1,
+        "할인율(%)": None,
+        "할인금액": None,
         "비고": "협상에 따라 단가 조정",
     }
     st.session_state.items_df = pd.concat(
@@ -202,19 +210,33 @@ def _reset_items():
 
 
 def _row_amount(row):
-    """행의 공급가 계산. 입력이 전혀 없으면 None (빈 표시)."""
+    """행의 공급가 계산 (할인 반영). 입력이 전혀 없으면 None."""
     qty = row.get("수량")
     period = row.get("기간(횟수)")
     price = row.get("단가")
-    # 단가가 비어있으면 계산 불가 → 빈 칸
     if not (pd.notna(price) and price):
         return None
     q = qty if pd.notna(qty) and qty else 1
     p = period if pd.notna(period) and period else 1
     try:
-        return int(q) * int(p) * int(price)
+        gross = int(q) * int(p) * int(price)
     except (TypeError, ValueError):
         return None
+    # 항목별 할인: 할인금액 > 할인율
+    disc_amt = row.get("할인금액")
+    disc_rate = row.get("할인율(%)")
+    discount = 0
+    if pd.notna(disc_amt) and disc_amt:
+        try:
+            discount = int(disc_amt)
+        except (TypeError, ValueError):
+            discount = 0
+    elif pd.notna(disc_rate) and disc_rate:
+        try:
+            discount = int(round(gross * float(disc_rate) / 100))
+        except (TypeError, ValueError):
+            discount = 0
+    return gross - discount
 
 
 def render_quote_page():
@@ -365,9 +387,17 @@ def render_quote_page():
                 ),
                 "기간(횟수)": st.column_config.NumberColumn("기간(횟수)", min_value=0, step=1),
                 "수량": st.column_config.NumberColumn("수량", min_value=0, step=1),
+                "할인율(%)": st.column_config.NumberColumn(
+                    "할인율(%)", min_value=0, max_value=100, step=1, format="%d%%",
+                    help="항목별 할인율 (0~100). 할인금액이 입력되면 할인금액이 우선됩니다.",
+                ),
+                "할인금액": st.column_config.NumberColumn(
+                    "할인금액", min_value=0, step=1000, format="₩%d",
+                    help="항목별 할인 금액 (양수). 비워두면 할인율이 적용됩니다.",
+                ),
                 "공급가": st.column_config.NumberColumn(
                     "공급가", disabled=True, format="₩%d",
-                    help="수량 × 기간(횟수) × 단가 (자동 계산)",
+                    help="(수량 × 기간 × 단가) − 항목별 할인",
                 ),
                 "비고": st.column_config.TextColumn("비고"),
             },
@@ -424,16 +454,38 @@ def render_quote_page():
 
     if not edited_df.empty:
         amounts = edited_df.apply(_row_amount, axis=1)
-        subtotal = int(pd.to_numeric(amounts, errors="coerce").fillna(0).sum())
+        items_sum = int(pd.to_numeric(amounts, errors="coerce").fillna(0).sum())
+
+        st.divider()
+        st.caption("📊 **공급가액 · 부가세 · 합계 금액**")
+        td_col, _ = st.columns([1, 3])
+        with td_col:
+            total_discount_pct = st.number_input(
+                "전체 일괄 할인율 (%)",
+                min_value=0, max_value=100, step=1,
+                value=int(st.session_state.get("total_discount_pct", 0)),
+                key="total_discount_pct",
+                help="공급가액에 일괄 적용되는 할인율 (항목별 할인은 별도 행에서 적용).",
+            )
+        total_discount_value = int(round(items_sum * total_discount_pct / 100))
+        subtotal = items_sum - total_discount_value
+
         vat_rate = labels.quote.vat_rate
         vat = int(round(subtotal * vat_rate))
         total = subtotal + vat
 
-        st.divider()
-        m1, m2, m3 = st.columns(3)
-        m1.metric("공급가액", f"₩{subtotal:,}")
-        m2.metric(f"부가세 ({int(vat_rate * 100)}%)", f"₩{vat:,}")
-        m3.metric("합계 금액", f"₩{total:,}")
+        if total_discount_pct > 0:
+            m0, m1, m2, m3 = st.columns(4)
+            m0.metric("일괄 할인", f"-₩{total_discount_value:,}",
+                      delta=f"{total_discount_pct}%", delta_color="inverse")
+            m1.metric("공급가액", f"₩{subtotal:,}")
+            m2.metric(f"부가세 ({int(vat_rate * 100)}%)", f"₩{vat:,}")
+            m3.metric("합계 금액", f"₩{total:,}")
+        else:
+            m1, m2, m3 = st.columns(3)
+            m1.metric("공급가액", f"₩{subtotal:,}")
+            m2.metric(f"부가세 ({int(vat_rate * 100)}%)", f"₩{vat:,}")
+            m3.metric("합계 금액", f"₩{total:,}")
 
     st.subheader("4. 기타 안내 (선택)")
     notes = st.text_area(
@@ -471,6 +523,11 @@ def render_quote_page():
         items_df=edited_df,
         notes=notes.strip() or None,
         soffice_available=soffice_available,
+        total_discount_rate=(
+            float(st.session_state.get("total_discount_pct", 0)) / 100
+            if int(st.session_state.get("total_discount_pct", 0) or 0) > 0
+            else None
+        ),
     )
 
     btn_prev, btn_gen = st.columns([1, 1])
@@ -521,7 +578,8 @@ def _compute_auto_notice_lines(brand_id: str, valid_until: date,
 def _build_quote_artifacts(*, brand_id, issued_date, valid_until,
                            counterparty_data, issuer_contact_data,
                            subject, items_df, notes,
-                           soffice_available, status_label="문서 생성 중..."):
+                           soffice_available, total_discount_rate=None,
+                           status_label="문서 생성 중..."):
     """입력값을 검증·렌더링하여 (document_id, docx_bytes, pdf_bytes) 를 반환.
     실패 시 None 반환 (사용자에게 에러는 이미 표시됨)."""
     if not counterparty_data["name"]:
@@ -542,12 +600,18 @@ def _build_quote_artifacts(*, brand_id, issued_date, valid_until,
         unit_price = row.get("단가") or 0
         desc_val = row.get("설명")
         notes_val = row.get("비고")
+        disc_rate = row.get("할인율(%)")
+        disc_amt = row.get("할인금액")
         items.append(LineItem(
             name=name,
             description=desc_val if isinstance(desc_val, str) and desc_val else None,
             qty=float(qty) if pd.notna(qty) and qty else None,
             period=float(period) if pd.notna(period) and period else None,
             unit_price=float(unit_price),
+            discount_rate=(float(disc_rate) / 100
+                           if pd.notna(disc_rate) and disc_rate else None),
+            discount_amount=(float(disc_amt)
+                             if pd.notna(disc_amt) and disc_amt else None),
             notes=notes_val if isinstance(notes_val, str) and notes_val else None,
         ))
 
@@ -564,6 +628,7 @@ def _build_quote_artifacts(*, brand_id, issued_date, valid_until,
         issued_date=issued_date, valid_until=valid_until,
         counterparty=Counterparty(**counterparty_data),
         subject=subject, line_items=items,
+        total_discount_rate=total_discount_rate,
         totals=Totals(), clauses=[], notes=notes,
     )
 
@@ -1225,16 +1290,19 @@ def _mc_items_to_df(items: list[dict]) -> pd.DataFrame:
     if not items:
         return pd.DataFrame(columns=[
             "분류", "상세 구분", "기간", "단가", "단가(텍스트)",
-            "금액 텍스트", "비고",
+            "할인율(%)", "할인금액", "금액 텍스트", "비고",
         ])
     rows = []
     for it in items:
+        dr = it.get("discount_rate")
         rows.append({
             "분류": it.get("_subcategory", ""),
             "상세 구분": it.get("name", ""),
             "기간": it.get("billing_period", ""),
             "단가": it.get("unit_price"),
             "단가(텍스트)": it.get("unit_price_text", ""),
+            "할인율(%)": int(dr * 100) if dr else None,
+            "할인금액": it.get("discount_amount"),
             "금액 텍스트": it.get("amount_text", ""),
             "비고": it.get("notes", ""),
         })
@@ -1273,6 +1341,22 @@ def _df_to_section_categories(df: pd.DataFrame) -> list[dict]:
         upt = row.get("단가(텍스트)")
         if isinstance(upt, str) and upt.strip():
             item["unit_price_text"] = upt.strip()
+        dr = row.get("할인율(%)")
+        if pd.notna(dr) and dr not in ("", None):
+            try:
+                drv = float(dr)
+                if drv > 0:
+                    item["discount_rate"] = drv / 100
+            except (TypeError, ValueError):
+                pass
+        da = row.get("할인금액")
+        if pd.notna(da) and da not in ("", None):
+            try:
+                dav = float(da)
+                if dav > 0:
+                    item["discount_amount"] = dav
+            except (TypeError, ValueError):
+                pass
         amt_text = row.get("금액 텍스트")
         if isinstance(amt_text, str) and amt_text.strip():
             item["amount_text"] = amt_text.strip()
@@ -1587,18 +1671,42 @@ def _render_scenario_editor(s_idx: int, scenario: dict, products: list[dict]) ->
         vat_rate = load_labels(PROJECT_ROOT).quote.vat_rate
     except Exception:  # noqa: BLE001
         vat_rate = 0.10
-    subtotal, vat, total = scenario_vat_and_total(sc_obj, vat_rate)
+
+    # 전체 일괄 할인율 입력 (문서 단위; 모든 시나리오에 공통 적용)
+    st.divider()
+    st.caption("📊 **이 시나리오의 합계** (모든 기간 합산, 할인 차감 반영)")
+    td_col, _ = st.columns([1, 3])
+    with td_col:
+        td_pct = st.number_input(
+            "전체 일괄 할인율 (%)",
+            min_value=0, max_value=100, step=1,
+            value=int((st.session_state.mc_doc.get("total_discount_rate") or 0) * 100),
+            key=f"mc_total_discount_pct_{s_idx}",
+            help="공급가액 합계에 일괄 적용. 항목별 할인은 별도 행에서 입력합니다.",
+        )
+    st.session_state.mc_doc["total_discount_rate"] = (td_pct / 100) if td_pct > 0 else None
+    td_rate = td_pct / 100 if td_pct > 0 else 0
+    items_sum = sum(scenario_vat_and_total(sc_obj, vat_rate, None)[0:1])  # 공급가액 (할인 전)
+    items_sum = scenario_vat_and_total(sc_obj, vat_rate, None)[0]
+    subtotal, vat, total = scenario_vat_and_total(sc_obj, vat_rate, td_rate)
+    td_value = items_sum - subtotal
 
     def _money_label(v: float) -> str:
         val = int(round(v))
         return f"-₩{abs(val):,}" if val < 0 else f"₩{val:,}"
 
-    st.divider()
-    st.caption("📊 **이 시나리오의 합계** (모든 기간 합산, 할인 차감 반영)")
-    m1, m2, m3 = st.columns(3)
-    m1.metric("공급가액", _money_label(subtotal))
-    m2.metric(f"부가세 ({int(vat_rate * 100)}%)", _money_label(vat))
-    m3.metric("합계 금액", _money_label(total))
+    if td_pct > 0:
+        m0, m1, m2, m3 = st.columns(4)
+        m0.metric("일괄 할인", f"-₩{int(round(td_value)):,}",
+                  delta=f"{td_pct}%", delta_color="inverse")
+        m1.metric("공급가액", _money_label(subtotal))
+        m2.metric(f"부가세 ({int(vat_rate * 100)}%)", _money_label(vat))
+        m3.metric("합계 금액", _money_label(total))
+    else:
+        m1, m2, m3 = st.columns(3)
+        m1.metric("공급가액", _money_label(subtotal))
+        m2.metric(f"부가세 ({int(vat_rate * 100)}%)", _money_label(vat))
+        m3.metric("합계 금액", _money_label(total))
 
 
 def _render_section_editor(s_idx: int, sec_idx: int, section: dict,
@@ -1658,6 +1766,8 @@ def _render_section_editor(s_idx: int, sec_idx: int, section: dict,
                     "기간": p.get("billing_period", ""),
                     "단가": p.get("unit_price"),
                     "단가(텍스트)": p.get("unit_price_text", ""),
+                    "할인율(%)": None,
+                    "할인금액": None,
                     "금액 텍스트": p.get("default_amount_text", ""),
                     "비고": p.get("notes", ""),
                 }
@@ -1695,6 +1805,14 @@ def _render_section_editor(s_idx: int, sec_idx: int, section: dict,
             "단가(텍스트)": st.column_config.TextColumn(
                 "단가(텍스트)",
                 help="숫자로 표현 불가한 단가 (예: '투입기간 X SW개발자 임금')",
+            ),
+            "할인율(%)": st.column_config.NumberColumn(
+                "할인율(%)", min_value=0, max_value=100, step=1, format="%d%%",
+                help="항목별 할인율 (0~100). 할인금액 입력 시 할인금액이 우선.",
+            ),
+            "할인금액": st.column_config.NumberColumn(
+                "할인금액", min_value=0, step=1000, format="₩%d",
+                help="항목별 할인 금액 (양수).",
             ),
             "금액 텍스트": st.column_config.TextColumn(
                 "금액 텍스트",

@@ -296,7 +296,14 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
     CENTER = WD_ALIGN_PARAGRAPH.CENTER
     RIGHT = WD_ALIGN_PARAGRAPH.RIGHT
 
-    # 컬럼 정의 — 새 순서: 항목·설명·단가·기간(횟수)·수량·공급가·비고
+    def _discount_text(i):
+        if i.discount_amount and i.discount_amount > 0:
+            return f"-{_format_money(i.discount_amount, i.currency)}"
+        if i.discount_rate:
+            return f"{int(round(i.discount_rate * 100))}%"
+        return ""
+
+    # 컬럼 정의 — 새 순서: 항목·설명·단가·기간(횟수)·수량·할인·공급가·비고
     # 각 컬럼: (key, header, base_width_cm, align, value_getter, always_show, has_data_check)
     all_columns = [
         ("name", th.name, 3.2, LEFT,
@@ -312,6 +319,9 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
          lambda its: any((i.period is not None and i.period and i.period != 0) for i in its)),
         ("qty", th.qty, 1.2, CENTER,
          lambda i: f"{i.qty:g}" if i.qty is not None else "", True, None),
+        ("discount", "할인", 1.6, CENTER,
+         _discount_text, False,
+         lambda its: any(((i.discount_amount or 0) > 0) or i.discount_rate for i in its)),
         ("amount", th.amount, 2.8, RIGHT,
          lambda i: _format_money(i.amount, i.currency), True, None),
         ("notes", th.notes, 3.2, LEFT,
@@ -383,11 +393,19 @@ def _render_totals(doc, brand: Brand, document: QuoteDocument,
     currency = t.currency
 
     ql = labels.quote.labels
-    rows = [
+    rows = []
+    td_rate = getattr(document, "total_discount_rate", None) or 0
+    if td_rate > 0:
+        items_sum = sum(item.amount for item in document.line_items)
+        td_value = items_sum - t.subtotal
+        rows.append(("공급가액 (할인 전)", _format_money(items_sum, currency), False))
+        rows.append((f"일괄 할인 ({int(round(td_rate * 100))}%)",
+                     f"-{_format_money(td_value, currency)}", False))
+    rows.extend([
         (ql.subtotal, _format_money(t.subtotal, currency), False),
         (f"{ql.vat} ({int(t.vat_rate * 100)}%)", _format_money(t.vat, currency), False),
         (ql.total, _format_money(t.total, currency), True),
-    ]
+    ])
 
     table = doc.add_table(rows=len(rows), cols=2)
     table.alignment = WD_TABLE_ALIGNMENT.RIGHT

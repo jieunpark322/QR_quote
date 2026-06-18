@@ -33,11 +33,29 @@ class MembershipLineItem(BaseModel):
     billing_period: str | None = None  # 기간: "1회성", "매월", "발생시", "발생월", "1개당"
     unit_price: float | None = None    # 단가 (숫자). null 이면 unit_price_text 사용
     unit_price_text: str | None = None # 단가 텍스트 (예: "투입기간 X SW개발자 임금 단가")
-    discount_rate: float | None = None # 할인율 (0.4 = 40%)
-    amount: float | None = None        # 금액 직접 지정. 없으면 unit_price × (1-discount_rate)
+    discount_rate: float | None = None      # 항목별 할인율 0~1 (0.4 = 40%)
+    discount_amount: float | None = None    # 항목별 할인 금액 (양수)
+    amount: float | None = None        # 금액 직접 지정. 없으면 자동 계산
     amount_text: str | None = None     # 금액 텍스트 (예: "후청구", "협의 금액", "무상제공")
     notes: str | None = None           # 비고
     sub_items: list[MembershipSubItem] = Field(default_factory=list)
+
+    def gross_amount(self) -> float | None:
+        """할인 적용 전 금액. unit_price 가 없으면 None."""
+        if self.unit_price is None:
+            return None
+        return float(self.unit_price)
+
+    def discount_value(self) -> float:
+        """실제 차감 할인액. 할인금액 > 할인율."""
+        if self.discount_amount and self.discount_amount > 0:
+            return float(self.discount_amount)
+        if self.discount_rate:
+            g = self.gross_amount()
+            if g is None:
+                return 0.0
+            return g * float(self.discount_rate)
+        return 0.0
 
     def effective_amount(self) -> float | None:
         """소계에 포함될 실제 숫자 금액. 텍스트/None 이면 None."""
@@ -45,10 +63,10 @@ class MembershipLineItem(BaseModel):
             return self.amount
         if self.amount_text:
             return None
-        if self.unit_price is None:
+        g = self.gross_amount()
+        if g is None:
             return None
-        d = self.discount_rate or 0
-        return self.unit_price * (1 - d)
+        return g - self.discount_value()
 
 
 class MembershipCategory(BaseModel):
@@ -98,6 +116,7 @@ class MembershipQuoteDocument(BaseModel):
 
     scenarios: list[MembershipScenario] = Field(default_factory=list)
 
+    total_discount_rate: float | None = None       # 전체 일괄 할인율 0~1 (시나리오별 적용)
     unit_notice: str = "(단위 : 원, 부가세별도)"      # 표 우측 상단 안내
 
     remarks: list[str] = Field(default_factory=lambda: [
@@ -144,8 +163,14 @@ def scenario_subtotal(sc: MembershipScenario) -> float:
 
 
 def scenario_vat_and_total(sc: MembershipScenario,
-                           vat_rate: float = 0.10) -> tuple[float, float, float]:
-    """시나리오의 (공급가액, 부가세, 합계 금액) 계산."""
-    subtotal = scenario_subtotal(sc)
+                           vat_rate: float = 0.10,
+                           total_discount_rate: float | None = None,
+                           ) -> tuple[float, float, float]:
+    """시나리오의 (공급가액, 부가세, 합계 금액) 계산.
+    전체 할인율 적용 후 부가세 계산.
+    """
+    items_sum = scenario_subtotal(sc)
+    td = total_discount_rate or 0
+    subtotal = items_sum * (1 - td)
     vat = round(subtotal * vat_rate)
     return subtotal, vat, subtotal + vat

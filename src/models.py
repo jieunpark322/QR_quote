@@ -72,15 +72,31 @@ class LineItem(BaseModel):
     qty: float | None = None
     period: float | None = None
     unit_price: float
+    discount_rate: float | None = None     # 항목별 할인율 0~1 (예: 0.4 = 40%)
+    discount_amount: float | None = None   # 항목별 할인 금액 (양수)
     currency: str = "KRW"
     notes: str | None = None
 
     @property
-    def amount(self) -> float:
-        # 수량/기간이 None 또는 0(의미 없는 값) 이면 1로 처리
+    def gross_amount(self) -> float:
+        """할인 적용 전 금액 (수량 × 기간 × 단가)."""
         q = self.qty if (self.qty is not None and self.qty != 0) else 1
         p = self.period if (self.period is not None and self.period != 0) else 1
         return q * p * self.unit_price
+
+    @property
+    def discount_value(self) -> float:
+        """실제 차감되는 할인액. 할인금액 > 할인율 우선."""
+        if self.discount_amount and self.discount_amount > 0:
+            return float(self.discount_amount)
+        if self.discount_rate:
+            return self.gross_amount * float(self.discount_rate)
+        return 0.0
+
+    @property
+    def amount(self) -> float:
+        """할인 적용 후 금액 (PDF/합계에 사용)."""
+        return self.gross_amount - self.discount_value
 
 
 class Totals(BaseModel):
@@ -94,14 +110,17 @@ class Totals(BaseModel):
 def ensure_totals(document, default_vat_rate: float) -> None:
     """문서의 totals에서 누락된 값을 자동 계산합니다.
 
-    - subtotal: 누락 시 line_items의 amount 합으로
-    - vat_rate: 누락 시 labels의 기본값으로
-    - vat: 누락 시 subtotal × vat_rate 반올림
-    - total: 누락 시 subtotal + vat
+    계산 순서:
+      - 항목별 할인 후 금액 합 = items_sum
+      - 전체 할인율 차감 = items_sum × (1 - total_discount_rate)  → subtotal
+      - 부가세 별도 = subtotal × vat_rate
+      - 합계 = subtotal + vat
     """
     t = document.totals
     if t.subtotal is None:
-        t.subtotal = sum(item.amount for item in document.line_items)
+        items_sum = sum(item.amount for item in document.line_items)
+        td = getattr(document, "total_discount_rate", None) or 0
+        t.subtotal = items_sum * (1 - td)
     if t.vat_rate is None:
         t.vat_rate = default_vat_rate
     if t.vat is None:
@@ -126,6 +145,7 @@ class QuoteDocument(BaseModel):
     counterparty: Counterparty
     subject: str
     line_items: list[LineItem]
+    total_discount_rate: float | None = None  # 전체 일괄 할인율 0~1 (예: 0.1 = 10%)
     totals: Totals = Field(default_factory=Totals)
     clauses: list[ClauseRef] = Field(default_factory=list)
     notes: str | None = None
