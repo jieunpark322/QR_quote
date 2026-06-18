@@ -385,18 +385,20 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
 
     # 콘텐츠 길이 기반 컬럼 너비 — 짧은 컬럼은 좁게, 긴(설명·항목·비고) 컬럼은 넓게
     USABLE_WIDTH = 18.4  # 좌우 여백 1.4cm 가정
-    CHAR_CM = 0.22       # 한글 한 글자 대략 폭
+    CHAR_CM = 0.28       # 한글 한 글자 대략 폭 (셀 padding 고려해 여유)
+    PAD_CM = 0.6         # 셀 좌우 패딩 + 안전 여백
+    MIN_SAFE_CM = 1.2    # 헤더 글자수와 무관하게 보장하는 최소 폭
 
-    # 컬럼 키별 min/max 범위 (가시성 보장) — 짧은 컬럼은 좁게, 설명은 넓게
-    range_by_key = {
-        "name":        (2.6, 5.5),
-        "description": (3.8, 8.5),
-        "unit_price":  (1.8, 2.6),
-        "period":      (0.9, 1.3),
-        "qty":         (0.8, 1.2),
-        "discount":    (1.1, 1.7),
-        "amount":      (2.0, 2.8),
-        "notes":       (1.6, 4.0),
+    # 컬럼 키별 max 범위 (lo 는 헤더가 한 줄에 들어갈 너비를 자동 계산)
+    max_by_key = {
+        "name":        5.0,
+        "description": 6.0,   # 너무 넓어 여백 남는 문제로 8.5 → 6.0
+        "unit_price":  2.6,
+        "period":      2.0,
+        "qty":         1.5,
+        "discount":    2.0,
+        "amount":      2.8,
+        "notes":       4.0,
     }
 
     def _max_line_len(strings):
@@ -413,9 +415,11 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
         key, header, base, _, getter, _, _ = c
         content_strings = [str(getter(it)) for it in items] + [header]
         content_len = _max_line_len(content_strings)
-        # 헤더와 콘텐츠 중 큰 쪽 + 약간의 여유
-        raw = max(content_len * CHAR_CM, len(header) * CHAR_CM) + 0.3
-        lo, hi = range_by_key.get(key, (base * 0.7, base * 1.3))
+        # 헤더가 한 줄에 잘리지 않고 들어갈 최소 너비
+        lo = max(len(header) * CHAR_CM + PAD_CM, MIN_SAFE_CM)
+        hi = max(max_by_key.get(key, base * 1.3), lo)
+        # 콘텐츠 폭 + 패딩
+        raw = content_len * CHAR_CM + PAD_CM
         raw_widths.append(min(max(raw, lo), hi))
 
     total = sum(raw_widths)
