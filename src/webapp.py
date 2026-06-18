@@ -1264,14 +1264,6 @@ def render_membership_quote_page():
 
     st.title("🏢 멤버십 클라우드 견적서 작성")
 
-    # 견적서 제목 (문서번호는 발행 시 자동 생성)
-    state["title"] = st.text_input(
-        "견적서 제목",
-        value=state.get("title", "") or "",
-        key="mc_title",
-        placeholder="예: 멤버십 클라우드 견적서",
-    )
-
     # ─── 0. 발행 담당자 정보 ───
     try:
         _brand_for_default = load_brand(PROJECT_ROOT, "softment")
@@ -1305,8 +1297,8 @@ def render_membership_quote_page():
             placeholder="예: name@softment.co.kr",
         )
 
-    # ─── 1. 제휴사(고객) 정보 ───
-    st.subheader("1. 제휴사 (고객) 정보")
+    # ─── 1. 수신처 정보 ───
+    st.subheader("1. 수신처 정보")
     st.caption("회사(우리) 기본 정보는 '⚙ 설정' 의 브랜드 정보에서 자동으로 가져옵니다.")
 
     cp = state.setdefault("counterparty", {"label": "제휴사", "name": ""})
@@ -1333,8 +1325,18 @@ def render_membership_quote_page():
             placeholder="예: 김담당 (구매팀장)",
         )
 
-    # ─── 2. 시나리오 (탭) ───
-    st.subheader("2. 시나리오 (PDF에서 페이지별로 분리됨)")
+    # ─── 2. 건명 ───
+    st.subheader("2. 건명")
+    state["title"] = st.text_input(
+        "건명",
+        value=state.get("title", "") or "",
+        key="mc_title",
+        placeholder="예: 멤버십 클라우드 견적서",
+        label_visibility="collapsed",
+    )
+
+    # ─── 3. 품목 내역 (시나리오 탭) ───
+    st.subheader("3. 품목 내역")
     st.caption(
         "💡 한 견적서 안에 여러 시나리오를 넣어 비교 견적을 제공할 수 있어요. "
         "예: '앱+POS 연동' 시나리오와 'POS만' 시나리오를 한 문서에 묶어 발행."
@@ -1375,7 +1377,7 @@ def render_membership_quote_page():
                 _render_scenario_editor(s_idx, scenario, products)
 
     # ─── 3. Remarks ───
-    st.subheader("3. 기타 안내")
+    st.subheader("4. 기타 안내")
     remarks = state.setdefault("remarks", [])
     remarks_text = st.text_area(
         "한 줄에 하나씩",
