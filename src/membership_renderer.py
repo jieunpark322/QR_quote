@@ -25,6 +25,7 @@ from .membership_models import (
     scenario_grand_total_by_period,
     section_subtotals_by_period,
 )
+from .labels import load_labels
 from .models import Brand
 
 
@@ -273,12 +274,20 @@ def _render_parties(doc, document: MembershipQuoteDocument, brand: Brand) -> Non
     if sup is None:
         # brand 정보로 자동 채움
         from .membership_models import MembershipParty
+        cpn = brand.contact_person
+        contact_label = None
+        if cpn:
+            contact_label = (
+                f"{cpn.name} ({cpn.title})" if cpn.title else cpn.name
+            )
         sup = MembershipParty(
             label="회사",
             name=brand.company.name_ko,
             address=brand.company.address,
             ceo=brand.company.ceo,
-            contact=(brand.contact_person.name if brand.contact_person else None),
+            contact=contact_label,
+            contact_phone=(cpn.phone if cpn else None),
+            contact_email=(cpn.email if cpn else None),
         )
 
     table = doc.add_table(rows=2, cols=2)
@@ -318,6 +327,10 @@ def _render_parties(doc, document: MembershipQuoteDocument, brand: Brand) -> Non
             info_lines.append(f"대표이사 : {party.ceo}")
         if party.contact:
             info_lines.append(f"담당자 : {party.contact}")
+        if party.contact_phone:
+            info_lines.append(f"연락처 : {party.contact_phone}")
+        if party.contact_email:
+            info_lines.append(f"이메일 : {party.contact_email}")
         for line in info_lines:
             p = c.add_paragraph()
             p.paragraph_format.space_before = Pt(0)
@@ -622,24 +635,41 @@ def _render_unit_notice(doc, document: MembershipQuoteDocument, brand: Brand) ->
     _apply_font(r, font, size_pt=7.5, color=RGBColor(0x77, 0x77, 0x77))
 
 
-def _render_grand_total(doc, scenario: MembershipScenario, brand: Brand) -> None:
-    """시나리오 전체의 '전체 서비스 이용 금액'."""
+def _render_grand_total(doc, scenario: MembershipScenario,
+                        brand: Brand, vat_rate: float = 0.10) -> None:
+    """시나리오 전체의 공급가액·부가세·합계 금액. 기간별 breakdown 유지."""
     font = brand.branding.font_family
     primary = _hex_to_rgb(brand.branding.colors.primary)
     by_period = scenario_grand_total_by_period(scenario)
     if not by_period:
         return
-    parts = [f"{period}: ₩{_format_won(amt)}" for period, amt in by_period.items()]
-    inline = "  /  ".join(parts)
 
-    p = doc.add_paragraph()
-    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    p.paragraph_format.space_before = Pt(4)
-    p.paragraph_format.space_after = Pt(0)
-    r1 = p.add_run("[전체 서비스 이용 금액]  ")
-    _apply_font(r1, font, size_pt=9, bold=True, color=primary)
-    r2 = p.add_run(inline)
-    _apply_font(r2, font, size_pt=9, bold=True)
+    def _inline(period_map: dict) -> str:
+        return "  /  ".join(f"{p}: ₩{_format_won(v)}" for p, v in period_map.items())
+
+    vat_by_period = {p: round(v * vat_rate) for p, v in by_period.items()}
+    total_by_period = {p: by_period[p] + vat_by_period[p] for p in by_period}
+
+    pct = int(vat_rate * 100)
+    rows = [
+        ("공급가액", _inline(by_period), False),
+        (f"부가세 ({pct}%)", _inline(vat_by_period), False),
+        ("합계 금액", _inline(total_by_period), True),
+    ]
+
+    for idx, (label, value, highlight) in enumerate(rows):
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        p.paragraph_format.space_before = Pt(4 if idx == 0 else 0)
+        p.paragraph_format.space_after = Pt(0)
+        r_label = p.add_run(f"{label}  ")
+        _apply_font(r_label, font, size_pt=9, bold=True,
+                    color=primary if highlight else None)
+        r_value = p.add_run(value)
+        _apply_font(r_value, font,
+                    size_pt=10 if highlight else 9,
+                    bold=True,
+                    color=primary if highlight else None)
 
 
 def _render_remarks(doc, document: MembershipQuoteDocument, brand: Brand) -> None:
@@ -683,6 +713,9 @@ def _add_tiny_spacer(doc) -> None:
 
 def render_membership_docx(brand: Brand, document: MembershipQuoteDocument,
                            project_root: Path, output_path: Path) -> Path:
+    labels = load_labels(project_root)
+    vat_rate = labels.quote.vat_rate
+
     doc = Document()
     for section in doc.sections:
         section.top_margin = Cm(0.9)
@@ -699,11 +732,10 @@ def render_membership_docx(brand: Brand, document: MembershipQuoteDocument,
         _render_unit_notice(doc, document, brand)
         for sec_i, sec in enumerate(scenario.sections):
             _render_section_table(doc, sec, brand)
-            # 마지막 섹션 뒤엔 빈 줄 생략 (공간 절약)
             if sec_i < len(scenario.sections) - 1:
                 _add_tiny_spacer(doc)
         if scenario.show_grand_total:
-            _render_grand_total(doc, scenario, brand)
+            _render_grand_total(doc, scenario, brand, vat_rate)
         _render_date(doc, document, brand)
         _render_remarks(doc, document, brand)
 

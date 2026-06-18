@@ -72,7 +72,9 @@ class MembershipParty(BaseModel):
     name: str                     # 회사명
     address: str | None = None
     ceo: str | None = None        # 대표이사
-    contact: str | None = None    # 담당자
+    contact: str | None = None    # 담당자 (이름 + 직책)
+    contact_phone: str | None = None
+    contact_email: str | None = None
 
 
 class MembershipScenario(BaseModel):
@@ -134,3 +136,16 @@ def scenario_grand_total_by_period(sc: MembershipScenario) -> dict[str, float]:
         for k, v in section_subtotals_by_period(sec).items():
             total[k] = total.get(k, 0) + v
     return total
+
+
+def scenario_subtotal(sc: MembershipScenario) -> float:
+    """시나리오 전체 공급가액 (모든 기간 합산)."""
+    return sum(scenario_grand_total_by_period(sc).values())
+
+
+def scenario_vat_and_total(sc: MembershipScenario,
+                           vat_rate: float = 0.10) -> tuple[float, float, float]:
+    """시나리오의 (공급가액, 부가세, 합계 금액) 계산."""
+    subtotal = scenario_subtotal(sc)
+    vat = round(subtotal * vat_rate)
+    return subtotal, vat, subtotal + vat

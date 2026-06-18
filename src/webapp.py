@@ -49,6 +49,7 @@ from src.membership_models import (
     MembershipSubItem,
     category_subtotal,
     scenario_grand_total_by_period,
+    scenario_vat_and_total,
     section_subtotals_by_period,
 )
 from src.membership_renderer import render_membership_docx
@@ -1271,9 +1272,42 @@ def render_membership_quote_page():
         placeholder="예: 멤버십 클라우드 견적서",
     )
 
+    # ─── 0. 발행 담당자 정보 ───
+    try:
+        _brand_for_default = load_brand(PROJECT_ROOT, "softment")
+        _default_cp = _brand_for_default.contact_person
+    except FileNotFoundError:
+        _default_cp = None
+
+    st.subheader("0. 발행 담당자 정보")
+    st.caption("이 견적서를 발행하는 우리 쪽 담당자. 회사(우리)의 '담당자/연락처/이메일' 칸에 표시됩니다.")
+    ic1, ic2 = st.columns(2)
+    with ic1:
+        issuer_name = st.text_input(
+            "담당자명", key="mc_issuer_name",
+            value=(_default_cp.name if _default_cp else ""),
+            placeholder="예: 박지은",
+        )
+        issuer_phone = st.text_input(
+            "연락처", key="mc_issuer_phone",
+            value=(_default_cp.phone if _default_cp and _default_cp.phone else ""),
+            placeholder="예: 010-0000-0000",
+        )
+    with ic2:
+        issuer_title = st.text_input(
+            "직책", key="mc_issuer_title",
+            value=(_default_cp.title if _default_cp and _default_cp.title else ""),
+            placeholder="예: QR사업부 매니저",
+        )
+        issuer_email = st.text_input(
+            "이메일", key="mc_issuer_email",
+            value=(_default_cp.email if _default_cp and _default_cp.email else ""),
+            placeholder="예: name@softment.co.kr",
+        )
+
     # ─── 1. 제휴사(고객) 정보 ───
     st.subheader("1. 제휴사 (고객) 정보")
-    st.caption("회사(우리) 정보는 '⚙ 설정' 의 브랜드 정보에서 자동으로 가져옵니다.")
+    st.caption("회사(우리) 기본 정보는 '⚙ 설정' 의 브랜드 정보에서 자동으로 가져옵니다.")
 
     cp = state.setdefault("counterparty", {"label": "제휴사", "name": ""})
     # supplier 는 PDF 렌더 시 brand.json 에서 자동 채워지므로 폼에서 제거
@@ -1359,7 +1393,15 @@ def render_membership_quote_page():
         st.info("제휴사 회사명과 시나리오 최소 1개를 입력해주세요.")
     if st.button("📝 멤버십 견적서 생성", type="primary",
                  use_container_width=True, disabled=not can_generate):
-        _generate_membership_quote(state, soffice_available)
+        _generate_membership_quote(
+            state, soffice_available,
+            issuer_contact=dict(
+                name=issuer_name.strip(),
+                title=issuer_title.strip() or None,
+                phone=issuer_phone.strip() or None,
+                email=issuer_email.strip() or None,
+            ),
+        )
 
 
 def _render_scenario_editor(s_idx: int, scenario: dict, products: list[dict]) -> None:
@@ -1405,6 +1447,20 @@ def _render_scenario_editor(s_idx: int, scenario: dict, products: list[dict]) ->
         with st.expander(f"📂 {section.get('name', '(이름 없음)')}",
                          expanded=True):
             _render_section_editor(s_idx, sec_idx, section, products)
+
+    # 시나리오 합계 — 공급가액 / 부가세 / 합계 금액
+    try:
+        sc_obj = MembershipScenario.model_validate(scenario)
+        vat_rate = load_labels(PROJECT_ROOT).quote.vat_rate
+        subtotal, vat, total = scenario_vat_and_total(sc_obj, vat_rate)
+        if subtotal:
+            st.divider()
+            m1, m2, m3 = st.columns(3)
+            m1.metric("공급가액", f"₩{int(subtotal):,}")
+            m2.metric(f"부가세 ({int(vat_rate * 100)}%)", f"₩{int(vat):,}")
+            m3.metric("합계 금액", f"₩{int(total):,}")
+    except Exception:
+        pass
 
 
 def _render_section_editor(s_idx: int, sec_idx: int, section: dict,
@@ -1511,7 +1567,8 @@ def _render_section_editor(s_idx: int, sec_idx: int, section: dict,
         pass
 
 
-def _generate_membership_quote(state: dict, soffice_available: bool):
+def _generate_membership_quote(state: dict, soffice_available: bool,
+                               issuer_contact: dict | None = None):
     # 문서번호 비어있으면 자동 생성 (QR 견적서와 동일 패턴)
     if not (state.get("document_id") or "").strip():
         try:
@@ -1532,6 +1589,17 @@ def _generate_membership_quote(state: dict, soffice_available: bool):
     except FileNotFoundError as e:
         st.error(f"❌ 브랜드 로드 실패: {e}")
         return
+
+    # 발행 담당자 정보 — 폼에서 입력한 값으로 brand.contact_person 일회용 override
+    if issuer_contact and (issuer_contact.get("name") or "").strip():
+        brand = brand.model_copy(update={
+            "contact_person": ContactPerson(
+                name=issuer_contact["name"].strip(),
+                title=issuer_contact.get("title"),
+                phone=issuer_contact.get("phone"),
+                email=issuer_contact.get("email"),
+            )
+        })
 
     output_dir = PROJECT_ROOT / "output"
     output_dir.mkdir(parents=True, exist_ok=True)
