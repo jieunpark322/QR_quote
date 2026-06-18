@@ -816,7 +816,6 @@ def render_quote_page():
         df_for_order = st.session_state.items_df.reset_index(drop=True)
         if len(df_for_order) > 1:
             with st.expander(f"🔃 행 순서 변경 ({len(df_for_order)}건)", expanded=False):
-                st.caption("☰ 아이콘 옆 ⬆ / ⬇ 버튼으로 행을 위·아래로 이동시키세요.")
                 move_action: tuple[str, int] | None = None
                 for i in range(len(df_for_order)):
                     name = df_for_order.at[i, "항목"] or "(이름 없음)"
