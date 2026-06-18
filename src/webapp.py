@@ -953,6 +953,12 @@ def _render_qr_catalog_editor():
             if col not in df.columns:
                 df[col] = default
 
+    st.caption(
+        "💡 설명/청구기준 칸은 표 안에선 한 줄로 보일 수 있어요. "
+        "Alt+Enter(또는 \\n) 로 줄바꿈을 넣으면, 표 아래 **줄바꿈 미리보기** 와 "
+        "견적서 PDF 양쪽 모두에 줄바꿈 그대로 반영됩니다."
+    )
+
     edited = st.data_editor(
         df[["code", "name", "description", "unit_price", "currency"]],
         column_config={
@@ -963,10 +969,12 @@ def _render_qr_catalog_editor():
                 "품목명", help="견적서에 표시되는 이름", required=True,
             ),
             "description": st.column_config.TextColumn(
-                "설명/청구기준", help="예: '매장 / 월', '매장 월 정액제'",
+                "설명/청구기준",
+                help=("예: '매장 / 월', '매장 월 정액제'. "
+                      "여러 줄로 입력하면 PDF에도 줄바꿈이 그대로 반영됩니다."),
             ),
             "unit_price": st.column_config.NumberColumn(
-                "단가 (원)", min_value=0, step=1000, format="₩%d",
+                "단가 (원)", min_value=0, step=1000, format="₩%,d",
             ),
             "currency": st.column_config.SelectboxColumn(
                 "통화", options=["KRW", "USD", "EUR", "JPY"],
@@ -977,6 +985,23 @@ def _render_qr_catalog_editor():
         hide_index=True,
         key="catalog_editor_qr",
     )
+
+    # 줄바꿈 미리보기 — 표에서 한 줄로 보이는 description 을 실제 모습 그대로 표시
+    multiline_rows = [
+        r for _, r in edited.iterrows()
+        if isinstance(r.get("description"), str) and "\n" in (r.get("description") or "")
+    ]
+    if multiline_rows:
+        with st.expander(f"📄 설명 줄바꿈 미리보기 · {len(multiline_rows)}건",
+                         expanded=True):
+            for r in multiline_rows:
+                name = (r.get("name") or "").strip() or (r.get("code") or "")
+                price = r.get("unit_price")
+                price_txt = (f" · ₩{int(price):,}"
+                             if price not in (None, "") and pd.notna(price) else "")
+                st.markdown(f"**{name}**{price_txt}")
+                st.text(r.get("description") or "")
+                st.divider()
 
     st.divider()
     col_save, col_info = st.columns([1, 3])
@@ -1072,7 +1097,7 @@ def _render_membership_catalog_editor():
                 help="청구 주기",
             ),
             "unit_price": st.column_config.NumberColumn(
-                "단가 (숫자)", step=100000, format="₩%d",
+                "단가 (숫자)", step=100000, format="₩%,d",
                 help="숫자 단가. 할인은 음수로 (예: -1000000). 텍스트는 옆 칸 사용.",
             ),
             "unit_price_text": st.column_config.TextColumn(
@@ -1090,6 +1115,23 @@ def _render_membership_catalog_editor():
         hide_index=True,
         key="catalog_editor_mc",
     )
+
+    # 줄바꿈 미리보기 — '비고' 에 여러 줄 입력한 항목은 실제 모습 그대로 표시
+    ml_rows = [
+        r for _, r in edited.iterrows()
+        if isinstance(r.get("notes"), str) and "\n" in (r.get("notes") or "")
+    ]
+    if ml_rows:
+        with st.expander(f"📄 비고 줄바꿈 미리보기 · {len(ml_rows)}건",
+                         expanded=True):
+            for r in ml_rows:
+                name = (r.get("name") or "").strip() or (r.get("code") or "")
+                price = r.get("unit_price")
+                price_txt = (f" · ₩{int(price):,}"
+                             if price not in (None, "") and pd.notna(price) else "")
+                st.markdown(f"**{name}**{price_txt}")
+                st.text(r.get("notes") or "")
+                st.divider()
 
     st.divider()
     col_save, col_info = st.columns([1, 3])
