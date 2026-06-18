@@ -1269,35 +1269,13 @@ def render_membership_quote_page():
         "구분→분류→항목 3단계 계층, 자동 소계·총계까지 반영됩니다."
     )
 
-    # ─── 상단 액션 ───
-    act_col1, act_col2 = st.columns([1, 1])
-    with act_col1:
-        if st.button("📋 샘플로 채우기", use_container_width=True,
-                     help="예시 데이터(시나리오 2개)로 폼을 채워봅니다. 현재 입력은 덮어써져요."):
-            st.session_state.mc_doc = _load_membership_sample()
-            st.rerun()
-    with act_col2:
-        if st.button("🗑 전체 초기화", use_container_width=True,
-                     help="모든 입력을 비웁니다."):
-            st.session_state.mc_doc = _empty_membership_state()
-            st.rerun()
-
-    # ─── 0. 문서 기본 ───
-    doc_col1, doc_col2 = st.columns([1, 2])
-    with doc_col1:
-        state["document_id"] = st.text_input(
-            "문서번호",
-            value=state.get("document_id", "") or "",
-            key="mc_doc_id",
-            placeholder="비우면 자동 생성 (MC-YYYYMMDD-고객명)",
-        )
-    with doc_col2:
-        state["title"] = st.text_input(
-            "견적서 제목",
-            value=state.get("title", "") or "",
-            key="mc_title",
-            placeholder="예: 멤버십 클라우드 견적서",
-        )
+    # 견적서 제목 (문서번호는 발행 시 자동 생성)
+    state["title"] = st.text_input(
+        "견적서 제목",
+        value=state.get("title", "") or "",
+        key="mc_title",
+        placeholder="예: 멤버십 클라우드 견적서",
+    )
 
     # ─── 1. 양측 발행 정보 ───
     st.subheader("1. 발행 정보 (제휴사 / 회사)")
@@ -1370,8 +1348,8 @@ def render_membership_quote_page():
     )
     scenarios = state.setdefault("scenarios", [])
 
-    sc_btn1, _ = st.columns([1, 5])
-    with sc_btn1:
+    sc_btn_add, sc_btn_sample, sc_btn_reset, _ = st.columns([1.2, 1.4, 1.4, 3])
+    with sc_btn_add:
         if st.button("+ 시나리오 추가", use_container_width=True):
             scenarios.append({
                 "name": f"시나리오 {len(scenarios) + 1}",
@@ -1380,11 +1358,21 @@ def render_membership_quote_page():
                 "show_grand_total": True,
             })
             st.rerun()
+    with sc_btn_sample:
+        if st.button("📋 샘플로 채우기", use_container_width=True,
+                     help="예시 데이터(시나리오 2개)로 폼을 채워봅니다. 현재 입력은 덮어써져요."):
+            st.session_state.mc_doc = _load_membership_sample()
+            st.rerun()
+    with sc_btn_reset:
+        if st.button("🗑 전체 초기화", use_container_width=True,
+                     help="제휴사·회사·시나리오까지 모든 입력을 비웁니다."):
+            st.session_state.mc_doc = _empty_membership_state()
+            st.rerun()
 
     if not scenarios:
         st.info(
-            "아직 시나리오가 없어요. '+ 시나리오 추가' 를 눌러 시작하거나, "
-            "상단 '📋 샘플로 채우기' 로 예시 구조를 먼저 확인할 수 있어요."
+            "아직 시나리오가 없어요. **+ 시나리오 추가** 를 눌러 시작하거나, "
+            "**📋 샘플로 채우기** 로 예시 구조를 먼저 확인할 수 있어요."
         )
     else:
         tab_labels = [(sc.get("name") or f"시나리오 {i+1}") for i, sc in enumerate(scenarios)]
