@@ -71,6 +71,54 @@ def _set_table_borders(table, color: str = "BFBFBF", size: int = 4) -> None:
     tbl_pr.append(borders)
 
 
+def _force_fixed_column_widths(table, widths) -> None:
+    """LibreOffice 변환 시 컬럼 너비를 보존하기 위해 tblLayout=fixed + tcW 강제 적용."""
+    table.autofit = False
+    table.allow_autofit = False
+    tbl_pr = table._tbl.tblPr
+    # tblLayout 기존 것이 있으면 제거 후 fixed 로 설정
+    existing = tbl_pr.find(qn("w:tblLayout"))
+    if existing is not None:
+        tbl_pr.remove(existing)
+    layout = OxmlElement("w:tblLayout")
+    layout.set(qn("w:type"), "fixed"),
+    tbl_pr.append(layout)
+
+    # 표 전체 너비를 명시적으로 설정 (twips 단위, 1cm = 567 twips)
+    total_w_twips = int(sum(w.cm * 567 for w in widths))
+    existing_w = tbl_pr.find(qn("w:tblW"))
+    if existing_w is not None:
+        tbl_pr.remove(existing_w)
+    tblW = OxmlElement("w:tblW")
+    tblW.set(qn("w:type"), "dxa")
+    tblW.set(qn("w:w"), str(total_w_twips))
+    tbl_pr.append(tblW)
+
+    # 각 컬럼별 grid 너비 명시 (tblGrid)
+    existing_grid = table._tbl.find(qn("w:tblGrid"))
+    if existing_grid is not None:
+        table._tbl.remove(existing_grid)
+    grid = OxmlElement("w:tblGrid")
+    for w in widths:
+        gc = OxmlElement("w:gridCol")
+        gc.set(qn("w:w"), str(int(w.cm * 567)))
+        grid.append(gc)
+    # tblGrid는 tblPr 다음에 와야 함
+    table._tbl.insert(list(table._tbl).index(tbl_pr) + 1, grid)
+
+    # 각 셀에 tcW 명시 (LibreOffice 가 cell.width 만으로는 무시할 수 있어 XML 강제)
+    for row in table.rows:
+        for cell, w in zip(row.cells, widths):
+            tc_pr = cell._tc.get_or_add_tcPr()
+            tcW_existing = tc_pr.find(qn("w:tcW"))
+            if tcW_existing is not None:
+                tc_pr.remove(tcW_existing)
+            tcW = OxmlElement("w:tcW")
+            tcW.set(qn("w:type"), "dxa")
+            tcW.set(qn("w:w"), str(int(w.cm * 567)))
+            tc_pr.append(tcW)
+
+
 def _apply_font(run, font_name: str, *, size_pt: float | None = None,
                 bold: bool = False, color: RGBColor | None = None) -> None:
     run.font.name = font_name
@@ -339,16 +387,16 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
     USABLE_WIDTH = 18.4  # 좌우 여백 1.4cm 가정
     CHAR_CM = 0.22       # 한글 한 글자 대략 폭
 
-    # 컬럼 키별 min/max 범위 (가시성 보장)
+    # 컬럼 키별 min/max 범위 (가시성 보장) — 짧은 컬럼은 좁게, 설명은 넓게
     range_by_key = {
-        "name":        (2.4, 5.0),
-        "description": (3.0, 7.5),
-        "unit_price":  (2.0, 3.0),
-        "period":      (1.0, 1.5),
-        "qty":         (0.9, 1.3),
-        "discount":    (1.2, 1.8),
-        "amount":      (2.2, 3.2),
-        "notes":       (1.8, 4.5),
+        "name":        (2.6, 5.5),
+        "description": (3.8, 8.5),
+        "unit_price":  (1.8, 2.6),
+        "period":      (0.9, 1.3),
+        "qty":         (0.8, 1.2),
+        "discount":    (1.1, 1.7),
+        "amount":      (2.0, 2.8),
+        "notes":       (1.6, 4.0),
     }
 
     def _max_line_len(strings):
@@ -376,10 +424,9 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
         scale = USABLE_WIDTH / total
         raw_widths = [w * scale for w in raw_widths]
     else:
-        # 남는 공간은 '긴' 컬럼(설명·항목·비고)에 가중 분배
+        # 남는 공간은 '긴' 컬럼(설명·항목·비고)에 강하게 가중 분배
         slack_weights_by_key = {
-            "description": 2.5, "name": 1.0, "notes": 1.5,
-            "amount": 0.3, "unit_price": 0.3,
+            "description": 4.0, "name": 1.0, "notes": 1.5,
         }
         weights = [slack_weights_by_key.get(c[0], 0.0) for c in active_cols]
         wsum = sum(weights)
@@ -394,6 +441,8 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
     table = doc.add_table(rows=1 + len(items), cols=len(headers))
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     _set_table_borders(table, color="9FB0CC", size=4)
+    # LibreOffice PDF 변환 시 컬럼 너비가 무시되지 않도록 layout fixed + tcW 강제
+    _force_fixed_column_widths(table, widths)
 
     # 헤더 행
     header_row = table.rows[0]
