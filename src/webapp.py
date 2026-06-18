@@ -187,13 +187,13 @@ def _add_blank_row():
 
 
 def _add_discount_row():
-    """할인 행 추가 — 분류 '💰 할인' + 음수 단가. 사용자가 협상가로 조정."""
+    """할인 행 추가 — 분류 '💰 할인'. 단가는 양수 입력 시 자동 차감."""
     df = st.session_state.items_df
     new_row = {
         "분류": ITEM_KIND_DISCOUNT,
         "항목": "할인",
-        "설명": "협상가 (음수 단가)",
-        "단가": -500000,
+        "설명": "협상가",
+        "단가": 500000,
         "기간(횟수)": None,
         "수량": 1,
         "할인율(%)": None,
@@ -222,7 +222,10 @@ def _row_amount(row):
         gross = int(q) * int(p) * int(price)
     except (TypeError, ValueError):
         return None
-    # 항목별 할인: 할인금액 > 할인율
+    # 분류='💰 할인' 이면 무조건 차감 (양수 입력도 음수 처리)
+    if row.get("분류") == ITEM_KIND_DISCOUNT:
+        return -abs(gross)
+    # 일반 항목별 할인: 할인금액 > 할인율
     disc_amt = row.get("할인금액")
     disc_rate = row.get("할인율(%)")
     discount = 0
@@ -382,8 +385,8 @@ def render_quote_page():
                 "항목": st.column_config.TextColumn("항목", required=True),
                 "설명": st.column_config.TextColumn("설명"),
                 "단가": st.column_config.NumberColumn(
-                    "단가", step=1000, format="₩%d",
-                    help="할인은 음수로 입력 (예: -500000)",
+                    "단가", step=1000, format="₩%,d",
+                    help="단가 (양수). '💰 할인' 분류는 자동 차감됩니다.",
                 ),
                 "기간(횟수)": st.column_config.NumberColumn("기간(횟수)", min_value=0, step=1),
                 "수량": st.column_config.NumberColumn("수량", min_value=0, step=1),
@@ -392,11 +395,11 @@ def render_quote_page():
                     help="항목별 할인율 (0~100). 할인금액이 입력되면 할인금액이 우선됩니다.",
                 ),
                 "할인금액": st.column_config.NumberColumn(
-                    "할인금액", min_value=0, step=1000, format="₩%d",
+                    "할인금액", min_value=0, step=1000, format="₩%,d",
                     help="항목별 할인 금액 (양수). 비워두면 할인율이 적용됩니다.",
                 ),
                 "공급가": st.column_config.NumberColumn(
-                    "공급가", disabled=True, format="₩%d",
+                    "공급가", disabled=True, format="₩%,d",
                     help="(수량 × 기간 × 단가) − 항목별 할인",
                 ),
                 "비고": st.column_config.TextColumn("비고"),
@@ -447,8 +450,8 @@ def render_quote_page():
                 hide_index=True,
                 use_container_width=True,
                 column_config={
-                    "단가": st.column_config.NumberColumn("단가", format="₩%d"),
-                    "공급가": st.column_config.NumberColumn("공급가", format="₩%d"),
+                    "단가": st.column_config.NumberColumn("단가", format="₩%,d"),
+                    "공급가": st.column_config.NumberColumn("공급가", format="₩%,d"),
                 },
             )
 
@@ -597,7 +600,11 @@ def _build_quote_artifacts(*, brand_id, issued_date, valid_until,
             continue
         qty = row.get("수량")
         period = row.get("기간(횟수)")
-        unit_price = row.get("단가") or 0
+        unit_price = float(row.get("단가") or 0)
+        is_discount_row = row.get("분류") == ITEM_KIND_DISCOUNT
+        # 분류='💰 할인' 이면 단가 양수 입력도 음수로 강제 (자동 차감)
+        if is_discount_row:
+            unit_price = -abs(unit_price)
         desc_val = row.get("설명")
         notes_val = row.get("비고")
         disc_rate = row.get("할인율(%)")
@@ -607,11 +614,13 @@ def _build_quote_artifacts(*, brand_id, issued_date, valid_until,
             description=desc_val if isinstance(desc_val, str) and desc_val else None,
             qty=float(qty) if pd.notna(qty) and qty else None,
             period=float(period) if pd.notna(period) and period else None,
-            unit_price=float(unit_price),
+            unit_price=unit_price,
             discount_rate=(float(disc_rate) / 100
-                           if pd.notna(disc_rate) and disc_rate else None),
+                           if pd.notna(disc_rate) and disc_rate
+                           and not is_discount_row else None),
             discount_amount=(float(disc_amt)
-                             if pd.notna(disc_amt) and disc_amt else None),
+                             if pd.notna(disc_amt) and disc_amt
+                             and not is_discount_row else None),
             notes=notes_val if isinstance(notes_val, str) and notes_val else None,
         ))
 
@@ -1295,11 +1304,19 @@ def _mc_items_to_df(items: list[dict]) -> pd.DataFrame:
     rows = []
     for it in items:
         dr = it.get("discount_rate")
+        # 분류='할인' 행은 표 표시 시 단가를 양수로 노출 (자동 차감 처리는 저장 단계에서)
+        up = it.get("unit_price")
+        sub = (it.get("_subcategory") or "").strip()
+        if sub == "할인" and up is not None:
+            try:
+                up = abs(float(up))
+            except (TypeError, ValueError):
+                pass
         rows.append({
-            "분류": it.get("_subcategory", ""),
+            "분류": sub,
             "상세 구분": it.get("name", ""),
             "기간": it.get("billing_period", ""),
-            "단가": it.get("unit_price"),
+            "단가": up,
             "단가(텍스트)": it.get("unit_price_text", ""),
             "할인율(%)": int(dr * 100) if dr else None,
             "할인금액": it.get("discount_amount"),
@@ -1335,7 +1352,11 @@ def _df_to_section_categories(df: pd.DataFrame) -> list[dict]:
         up = row.get("단가")
         if pd.notna(up) and up not in ("", None):
             try:
-                item["unit_price"] = float(up)
+                up_val = float(up)
+                # 분류='할인' 이면 단가 양수 입력도 음수로 강제 (자동 차감)
+                if sub == "할인":
+                    up_val = -abs(up_val)
+                item["unit_price"] = up_val
             except (TypeError, ValueError):
                 pass
         upt = row.get("단가(텍스트)")
@@ -1406,7 +1427,7 @@ def _add_blank_row_to_section(section: dict,
 
 
 def _add_discount_row_to_section(section: dict) -> None:
-    """'할인' 분류에 음수 단가 할인 행 추가. 협상가로 사용자가 조정 가능."""
+    """'할인' 분류에 할인 행 추가. 단가는 양수 입력 시 자동 차감."""
     section.setdefault("categories", [])
     target_cat = None
     for cat in section["categories"]:
@@ -1423,7 +1444,7 @@ def _add_discount_row_to_section(section: dict) -> None:
     target_cat.setdefault("items", []).append({
         "name": "협상 할인 (이름 수정 가능)",
         "billing_period": "1회성",
-        "unit_price": -1000000,
+        "unit_price": 1000000,
         "notes": "협상에 따라 단가 조정",
     })
 
@@ -1799,8 +1820,8 @@ def _render_section_editor(s_idx: int, sec_idx: int, section: dict,
             "기간": st.column_config.TextColumn("기간",
                 help="1회성 / 매월 / 발생시 / 발생월 / 1개당"),
             "단가": st.column_config.NumberColumn(
-                "단가 (숫자)", format="₩%d",
-                help="할인은 음수로 입력 (예: -1000000)",
+                "단가 (숫자)", format="₩%,d",
+                help="단가 (양수). 분류='할인'은 자동 차감됩니다.",
             ),
             "단가(텍스트)": st.column_config.TextColumn(
                 "단가(텍스트)",
@@ -1811,7 +1832,7 @@ def _render_section_editor(s_idx: int, sec_idx: int, section: dict,
                 help="항목별 할인율 (0~100). 할인금액 입력 시 할인금액이 우선.",
             ),
             "할인금액": st.column_config.NumberColumn(
-                "할인금액", min_value=0, step=1000, format="₩%d",
+                "할인금액", min_value=0, step=1000, format="₩%,d",
                 help="항목별 할인 금액 (양수).",
             ),
             "금액 텍스트": st.column_config.TextColumn(
