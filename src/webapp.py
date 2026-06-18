@@ -354,41 +354,38 @@ def _render_qr_recent_panel() -> None:
             st.caption("아직 생성/미리보기한 견적서가 없습니다.")
             return
 
-        options = list(range(len(history)))
-
-        def _fmt_hist(i: int) -> str:
-            _, data = history[i]
+        delete_path = None
+        for i, (path, data) in enumerate(history):
             saved = (data.get("_saved_at") or "")[:16].replace("T", " ")
             subj = data.get("_subject") or "(건명 없음)"
             cp = data.get("_cp_name") or "(수신처 없음)"
-            return f"🕐 {saved}  ·  {cp}  ·  {subj}"
-
-        sel_h = st.selectbox(
-            "불러올 견적서", options=options,
-            format_func=_fmt_hist, index=None,
-            placeholder="선택하세요...", key="qr_hist_select",
-        )
-        col_a, col_b = st.columns(2)
-        with col_a:
-            if st.button("📥 선택한 견적서 불러오기",
-                         use_container_width=True,
-                         disabled=sel_h is None,
-                         key="qr_hist_load"):
-                _, data = history[sel_h]
-                _qr_apply_snapshot(data)
-                st.success("✅ 견적서를 불러왔습니다.")
-                st.rerun()
-        with col_b:
-            if st.button("🗑 선택한 견적서 히스토리에서 삭제",
-                         use_container_width=True,
-                         disabled=sel_h is None,
-                         key="qr_hist_del"):
-                path, _ = history[sel_h]
-                try:
-                    path.unlink(missing_ok=True)
-                except OSError:
-                    pass
-                st.rerun()
+            with st.container(border=True):
+                rcols = st.columns([6, 1.2, 1.2])
+                with rcols[0]:
+                    st.markdown(
+                        f"🕐 {saved}<br>"
+                        f"<span style='color:#555'>**{cp}**  ·  {subj}</span>",
+                        unsafe_allow_html=True,
+                    )
+                with rcols[1]:
+                    if st.button("📥 불러오기",
+                                 key=f"qr_hist_load_{i}",
+                                 use_container_width=True):
+                        _qr_apply_snapshot(data)
+                        st.success("✅ 견적서를 불러왔습니다.")
+                        st.rerun()
+                with rcols[2]:
+                    if st.button("🗑 삭제",
+                                 key=f"qr_hist_del_{i}",
+                                 use_container_width=True,
+                                 help="이 견적서 히스토리만 삭제 (DOCX/PDF 파일은 그대로)"):
+                        delete_path = path
+        if delete_path is not None:
+            try:
+                delete_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            st.rerun()
 
 
 def _render_qr_template_panel() -> None:
@@ -419,37 +416,33 @@ def _render_qr_template_panel() -> None:
             st.caption("저장된 표본이 없습니다.")
             return
 
-        options = list(range(len(templates)))
-
-        def _fmt_tpl(i: int) -> str:
-            _, data = templates[i]
-            name = data.get("_template_name") or templates[i][0].stem
+        delete_path = None
+        for i, (path, data) in enumerate(templates):
+            name = data.get("_template_name") or path.stem
             saved = (data.get("_saved_at") or "")[:10]
-            return f"📋 {name}  ·  {saved}"
-
-        sel_t = st.selectbox(
-            "저장된 표본", options=options,
-            format_func=_fmt_tpl, index=None,
-            placeholder="선택하세요...", key="qr_tpl_select",
-        )
-        col_a, col_b = st.columns(2)
-        with col_a:
-            if st.button("📥 선택한 표본으로 시작",
-                         use_container_width=True,
-                         disabled=sel_t is None,
-                         key="qr_tpl_load"):
-                _, data = templates[sel_t]
-                _qr_apply_snapshot(data)
-                st.success("✅ 표본을 불러왔습니다.")
-                st.rerun()
-        with col_b:
-            if st.button("🗑 선택한 표본 삭제",
-                         use_container_width=True,
-                         disabled=sel_t is None,
-                         key="qr_tpl_del"):
-                path, _ = templates[sel_t]
-                _qr_delete_template(path)
-                st.rerun()
+            with st.container(border=True):
+                rcols = st.columns([6, 1.2, 1.2])
+                with rcols[0]:
+                    st.markdown(
+                        f"📋 **{name}**<br>"
+                        f"<span style='color:#777;font-size:0.85rem'>저장일 {saved}</span>",
+                        unsafe_allow_html=True,
+                    )
+                with rcols[1]:
+                    if st.button("📥 불러오기",
+                                 key=f"qr_tpl_load_{i}",
+                                 use_container_width=True):
+                        _qr_apply_snapshot(data)
+                        st.success(f"✅ 표본 '{name}' 을 불러왔습니다.")
+                        st.rerun()
+                with rcols[2]:
+                    if st.button("🗑 삭제",
+                                 key=f"qr_tpl_del_{i}",
+                                 use_container_width=True):
+                        delete_path = path
+        if delete_path is not None:
+            _qr_delete_template(delete_path)
+            st.rerun()
 
 
 # ═════════════════════════════════════════════════════════════
@@ -819,44 +812,48 @@ def render_quote_page():
         st.info("아직 품목이 없습니다. 위 드롭다운에서 카탈로그 상품을 추가하거나 '+ 빈 행' 을 누르세요.")
         edited_df = st.session_state.items_df
     else:
-        # 행 순서 변경 — 드래그앤드롭 (streamlit-sortables)
+        # 행 순서 변경 — 카드 + ☰ 아이콘 + ⬆⬇ 버튼 (한 클릭에 행 이동)
         df_for_order = st.session_state.items_df.reset_index(drop=True)
         if len(df_for_order) > 1:
-            with st.expander("🔃 행 순서 변경 (드래그앤드롭)", expanded=False):
-                st.caption(
-                    "왼쪽 **☰** 아이콘 영역을 잡고 위·아래로 드래그하면 품목 순서를 바꿀 수 있어요."
-                )
-                try:
-                    from streamlit_sortables import sort_items
-                    row_labels = [
-                        f"☰  [{i + 1}]  {df_for_order.at[i, '항목'] or '(이름 없음)'}"
-                        + (f"  ·  ₩{int(df_for_order.at[i, '단가']):,}"
-                           if pd.notna(df_for_order.at[i, '단가'])
-                           and df_for_order.at[i, '단가'] else "")
-                        for i in range(len(df_for_order))
-                    ]
-                    sorted_labels = sort_items(
-                        row_labels, direction="vertical",
-                        key="items_sort_dnd",
-                    )
-                    if sorted_labels and sorted_labels != row_labels:
-                        # 라벨에서 원래 인덱스 추출 ("☰  [3]  ..." → 3)
+            with st.expander(f"🔃 행 순서 변경 ({len(df_for_order)}건)", expanded=False):
+                st.caption("☰ 아이콘 옆 ⬆ / ⬇ 버튼으로 행을 위·아래로 이동시키세요.")
+                move_action: tuple[str, int] | None = None
+                for i in range(len(df_for_order)):
+                    name = df_for_order.at[i, "항목"] or "(이름 없음)"
+                    price = df_for_order.at[i, "단가"]
+                    label = f"**[{i + 1}]** {name}"
+                    if pd.notna(price) and price:
                         try:
-                            new_order = [
-                                int(s.split("[", 1)[1].split("]", 1)[0]) - 1
-                                for s in sorted_labels
-                            ]
-                            df = st.session_state.items_df.reset_index(drop=True)
-                            df = df.iloc[new_order].reset_index(drop=True)
-                            st.session_state.items_df = df
-                            st.rerun()
-                        except (ValueError, IndexError):
+                            label += f"  ·  ₩{int(price):,}"
+                        except (TypeError, ValueError):
                             pass
-                except ImportError:
-                    st.warning(
-                        "드래그앤드롭 컴포넌트(streamlit-sortables)가 설치되지 않았습니다. "
-                        "`pip install streamlit-sortables` 후 다시 실행해 주세요."
-                    )
+                    with st.container(border=True):
+                        rcols = st.columns([0.5, 8, 1, 1])
+                        with rcols[0]:
+                            st.markdown(
+                                "<div style='font-size:1.3rem;color:#888;"
+                                "text-align:center;padding-top:2px;'>☰</div>",
+                                unsafe_allow_html=True,
+                            )
+                        with rcols[1]:
+                            st.write(label)
+                        with rcols[2]:
+                            if st.button("⬆", key=f"row_up_{i}",
+                                         disabled=(i == 0),
+                                         use_container_width=True):
+                                move_action = ("up", i)
+                        with rcols[3]:
+                            if st.button("⬇", key=f"row_dn_{i}",
+                                         disabled=(i == len(df_for_order) - 1),
+                                         use_container_width=True):
+                                move_action = ("dn", i)
+                if move_action is not None:
+                    direction, idx = move_action
+                    j = idx - 1 if direction == "up" else idx + 1
+                    df = st.session_state.items_df.reset_index(drop=True)
+                    df.iloc[[idx, j]] = df.iloc[[j, idx]].values
+                    st.session_state.items_df = df
+                    st.rerun()
 
         # 공급가 컬럼을 계산해서 디스플레이용 DataFrame 생성
         display_df = st.session_state.items_df.copy()
