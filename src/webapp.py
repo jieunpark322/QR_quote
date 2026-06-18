@@ -327,132 +327,115 @@ def _inject_beforeunload(active: bool) -> None:
 """, height=0)
 
 
-def _render_qr_history_template_panel() -> None:
-    """견적서 작성 페이지 상단의 '최근/표본 불러오기' UI."""
+def _render_qr_recent_panel() -> None:
+    """📂 최근 견적서 — 자동 기록된 최근 10개 견적서를 불러와 이어서 편집."""
     history = _qr_list_history()
+    label = f"📂 최근 견적서 ({len(history)})" if history else "📂 최근 견적서"
+    with st.expander(label, expanded=False):
+        st.caption(
+            "견적서를 생성하면 자동으로 **최근 10개**가 보관됩니다. "
+            "오타나 누락이 있을 때 다시 불러와 이어서 편집할 수 있어요."
+        )
+        if not history:
+            st.caption("아직 생성한 견적서가 없습니다.")
+            return
+
+        options = list(range(len(history)))
+
+        def _fmt_hist(i: int) -> str:
+            _, data = history[i]
+            saved = (data.get("_saved_at") or "")[:16].replace("T", " ")
+            subj = data.get("_subject") or "(건명 없음)"
+            cp = data.get("_cp_name") or "(수신처 없음)"
+            return f"🕐 {saved}  ·  {cp}  ·  {subj}"
+
+        sel_h = st.selectbox(
+            "불러올 견적서", options=options,
+            format_func=_fmt_hist, index=None,
+            placeholder="선택하세요...", key="qr_hist_select",
+        )
+        col_a, col_b = st.columns(2)
+        with col_a:
+            if st.button("📥 선택한 견적서 불러오기",
+                         use_container_width=True,
+                         disabled=sel_h is None,
+                         key="qr_hist_load"):
+                _, data = history[sel_h]
+                _qr_apply_snapshot(data)
+                st.success("✅ 견적서를 불러왔습니다.")
+                st.rerun()
+        with col_b:
+            if st.button("🗑 선택한 견적서 히스토리에서 삭제",
+                         use_container_width=True,
+                         disabled=sel_h is None,
+                         key="qr_hist_del"):
+                path, _ = history[sel_h]
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                st.rerun()
+
+
+def _render_qr_template_panel() -> None:
+    """📋 견적서 표본 — 정석/반복용 케이스를 수기 저장해 빠르게 끌어와 시작."""
     templates = _qr_list_templates()
-    if not history and not templates:
-        with st.expander("📂 최근 견적서 · 📋 표본", expanded=False):
-            st.caption(
-                "💡 견적서를 한 번 생성하면 여기에 **최근 10개** 가 자동 보관되어 "
-                "다시 불러올 수 있고, 자주 쓰는 형태는 **표본** 으로 저장해 두면 "
-                "다음 견적서 작성 시 끌어와서 쓸 수 있어요."
-            )
+    label = f"📋 견적서 표본 ({len(templates)})" if templates else "📋 견적서 표본"
+    with st.expander(label, expanded=False):
+        st.caption(
+            "**표본**은 자주 쓰는 견적서 형태를 수기 저장해 두는 공간입니다. "
+            "정석 케이스를 미리 만들어 두고, 새 견적서 작성할 때 끌어와서 빠르게 시작하세요."
+        )
+        save_col1, save_col2 = st.columns([3, 2])
+        with save_col1:
             tpl_name = st.text_input(
-                "표본 이름", placeholder="예: 단가 표준안",
-                key="qr_tpl_name_input",
-                label_visibility="collapsed",
+                "표본 이름", placeholder="예: 단가 표준안 / 가맹점 A 견적",
+                key="qr_tpl_name", label_visibility="collapsed",
             )
+        with save_col2:
             if st.button("💾 현재 입력을 표본으로 저장",
-                         use_container_width=True, key="qr_tpl_save_empty"):
+                         use_container_width=True, key="qr_tpl_save"):
                 if _qr_save_template(tpl_name, _qr_snapshot_payload()):
                     st.success(f"✅ 표본 저장: {tpl_name}")
                     st.rerun()
                 else:
                     st.warning("표본 이름을 입력해 주세요.")
-        return
+        st.divider()
+        if not templates:
+            st.caption("저장된 표본이 없습니다.")
+            return
 
-    with st.expander(
-        f"📂 최근 견적서 ({len(history)}) · 📋 표본 ({len(templates)})",
-        expanded=False,
-    ):
-        tab_hist, tab_tpl = st.tabs(["📂 최근 견적서", "📋 표본 (수기 저장)"])
+        options = list(range(len(templates)))
 
-        with tab_hist:
-            if not history:
-                st.caption("아직 생성한 견적서가 없습니다. 한 번 생성하면 여기에 자동 저장됩니다.")
-            else:
-                st.caption("견적서를 생성하면 자동으로 최근 10개까지 보관됩니다. 클릭해서 이어서 편집할 수 있어요.")
-                options = list(range(len(history)))
+        def _fmt_tpl(i: int) -> str:
+            _, data = templates[i]
+            name = data.get("_template_name") or templates[i][0].stem
+            saved = (data.get("_saved_at") or "")[:10]
+            return f"📋 {name}  ·  {saved}"
 
-                def _fmt_hist(i: int) -> str:
-                    _, data = history[i]
-                    saved = (data.get("_saved_at") or "")[:16].replace("T", " ")
-                    subj = data.get("_subject") or "(건명 없음)"
-                    cp = data.get("_cp_name") or "(수신처 없음)"
-                    return f"🕐 {saved}  ·  {cp}  ·  {subj}"
-
-                sel_h = st.selectbox(
-                    "불러올 견적서", options=options,
-                    format_func=_fmt_hist, index=None,
-                    placeholder="선택하세요...", key="qr_hist_select",
-                )
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    if st.button("📥 선택한 견적서 불러오기",
-                                 use_container_width=True,
-                                 disabled=sel_h is None,
-                                 key="qr_hist_load"):
-                        _, data = history[sel_h]
-                        _qr_apply_snapshot(data)
-                        st.success("✅ 견적서를 불러왔습니다.")
-                        st.rerun()
-                with col_b:
-                    if st.button("🗑 선택한 견적서 히스토리에서 삭제",
-                                 use_container_width=True,
-                                 disabled=sel_h is None,
-                                 key="qr_hist_del"):
-                        path, _ = history[sel_h]
-                        try:
-                            path.unlink(missing_ok=True)
-                        except OSError:
-                            pass
-                        st.rerun()
-
-        with tab_tpl:
-            st.caption(
-                "**표본** 은 자주 쓰는 견적서 형태를 수기로 저장해 두는 공간입니다. "
-                "현재 입력값을 그대로 표본으로 저장하거나, 저장된 표본을 끌어와서 시작할 수 있어요."
-            )
-            save_col1, save_col2 = st.columns([3, 2])
-            with save_col1:
-                tpl_name = st.text_input(
-                    "표본 이름", placeholder="예: 단가 표준안 / 가맹점 A 견적",
-                    key="qr_tpl_name", label_visibility="collapsed",
-                )
-            with save_col2:
-                if st.button("💾 현재 입력을 표본으로 저장",
-                             use_container_width=True, key="qr_tpl_save"):
-                    if _qr_save_template(tpl_name, _qr_snapshot_payload()):
-                        st.success(f"✅ 표본 저장: {tpl_name}")
-                        st.rerun()
-                    else:
-                        st.warning("표본 이름을 입력해 주세요.")
-            st.divider()
-            if templates:
-                options = list(range(len(templates)))
-
-                def _fmt_tpl(i: int) -> str:
-                    _, data = templates[i]
-                    name = data.get("_template_name") or templates[i][0].stem
-                    saved = (data.get("_saved_at") or "")[:10]
-                    return f"📋 {name}  ·  {saved}"
-
-                sel_t = st.selectbox(
-                    "저장된 표본", options=options,
-                    format_func=_fmt_tpl, index=None,
-                    placeholder="선택하세요...", key="qr_tpl_select",
-                )
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    if st.button("📥 선택한 표본으로 시작",
-                                 use_container_width=True,
-                                 disabled=sel_t is None,
-                                 key="qr_tpl_load"):
-                        _, data = templates[sel_t]
-                        _qr_apply_snapshot(data)
-                        st.success("✅ 표본을 불러왔습니다.")
-                        st.rerun()
-                with col_b:
-                    if st.button("🗑 선택한 표본 삭제",
-                                 use_container_width=True,
-                                 disabled=sel_t is None,
-                                 key="qr_tpl_del"):
-                        path, _ = templates[sel_t]
-                        _qr_delete_template(path)
-                        st.rerun()
-            else:
-                st.caption("저장된 표본이 없습니다.")
+        sel_t = st.selectbox(
+            "저장된 표본", options=options,
+            format_func=_fmt_tpl, index=None,
+            placeholder="선택하세요...", key="qr_tpl_select",
+        )
+        col_a, col_b = st.columns(2)
+        with col_a:
+            if st.button("📥 선택한 표본으로 시작",
+                         use_container_width=True,
+                         disabled=sel_t is None,
+                         key="qr_tpl_load"):
+                _, data = templates[sel_t]
+                _qr_apply_snapshot(data)
+                st.success("✅ 표본을 불러왔습니다.")
+                st.rerun()
+        with col_b:
+            if st.button("🗑 선택한 표본 삭제",
+                         use_container_width=True,
+                         disabled=sel_t is None,
+                         key="qr_tpl_del"):
+                path, _ = templates[sel_t]
+                _qr_delete_template(path)
+                st.rerun()
 
 
 # ═════════════════════════════════════════════════════════════
@@ -656,8 +639,10 @@ def render_quote_page():
     st.title("📋 견적서 자동 생성")
     st.caption("폼을 채우고 '견적서 생성' 버튼을 누르면 DOCX/PDF 가 다운로드됩니다.")
 
-    # ─── 최근 견적서 / 표본 불러오기 ───
-    _render_qr_history_template_panel()
+    # ─── 최근 견적서 (자동 기록) ───
+    _render_qr_recent_panel()
+    # ─── 견적서 표본 (수기 저장된 정석 케이스) ───
+    _render_qr_template_panel()
 
     st.subheader("0. 발행 담당자 정보")
     st.caption(
@@ -765,40 +750,44 @@ def render_quote_page():
         st.info("아직 품목이 없습니다. 위 드롭다운에서 카탈로그 상품을 추가하거나 '+ 빈 행' 을 누르세요.")
         edited_df = st.session_state.items_df
     else:
-        # 행 순서 변경 — 행 선택 후 ↑/↓ 버튼으로 이동
+        # 행 순서 변경 — 드래그앤드롭 (streamlit-sortables)
         df_for_order = st.session_state.items_df.reset_index(drop=True)
         if len(df_for_order) > 1:
-            order_label, order_up, order_down = st.columns([5, 0.7, 0.7])
-            with order_label:
-                row_options = list(range(len(df_for_order)))
-                sel_row = st.selectbox(
-                    "🔃 순서 변경할 행",
-                    options=row_options,
-                    format_func=lambda i: (
-                        f"{i + 1}. {df_for_order.at[i, '항목'] or '(이름 없음)'}"
-                    ),
-                    index=None, placeholder="행을 선택해 위/오른쪽 버튼으로 이동...",
-                    key="row_reorder_sel",
-                    label_visibility="collapsed",
+            with st.expander("🔃 행 순서 변경 (드래그앤드롭)", expanded=False):
+                st.caption(
+                    "왼쪽 **☰** 아이콘 영역을 잡고 위·아래로 드래그하면 품목 순서를 바꿀 수 있어요."
                 )
-            with order_up:
-                if st.button("⬆ 위로", use_container_width=True,
-                             disabled=sel_row is None or sel_row == 0,
-                             key="row_move_up"):
-                    df = st.session_state.items_df.reset_index(drop=True)
-                    df.iloc[[sel_row - 1, sel_row]] = df.iloc[[sel_row, sel_row - 1]].values
-                    st.session_state.items_df = df
-                    st.session_state["row_reorder_sel"] = sel_row - 1
-                    st.rerun()
-            with order_down:
-                if st.button("⬇ 아래로", use_container_width=True,
-                             disabled=sel_row is None or sel_row == len(df_for_order) - 1,
-                             key="row_move_down"):
-                    df = st.session_state.items_df.reset_index(drop=True)
-                    df.iloc[[sel_row + 1, sel_row]] = df.iloc[[sel_row, sel_row + 1]].values
-                    st.session_state.items_df = df
-                    st.session_state["row_reorder_sel"] = sel_row + 1
-                    st.rerun()
+                try:
+                    from streamlit_sortables import sort_items
+                    labels = [
+                        f"☰  [{i + 1}]  {df_for_order.at[i, '항목'] or '(이름 없음)'}"
+                        + (f"  ·  ₩{int(df_for_order.at[i, '단가']):,}"
+                           if pd.notna(df_for_order.at[i, '단가'])
+                           and df_for_order.at[i, '단가'] else "")
+                        for i in range(len(df_for_order))
+                    ]
+                    sorted_labels = sort_items(
+                        labels, direction="vertical",
+                        key="items_sort_dnd",
+                    )
+                    if sorted_labels and sorted_labels != labels:
+                        # 라벨에서 원래 인덱스 추출 ("☰  [3]  ..." → 3)
+                        try:
+                            new_order = [
+                                int(s.split("[", 1)[1].split("]", 1)[0]) - 1
+                                for s in sorted_labels
+                            ]
+                            df = st.session_state.items_df.reset_index(drop=True)
+                            df = df.iloc[new_order].reset_index(drop=True)
+                            st.session_state.items_df = df
+                            st.rerun()
+                        except (ValueError, IndexError):
+                            pass
+                except ImportError:
+                    st.warning(
+                        "드래그앤드롭 컴포넌트(streamlit-sortables)가 설치되지 않았습니다. "
+                        "`pip install streamlit-sortables` 후 다시 실행해 주세요."
+                    )
 
         # 공급가 컬럼을 계산해서 디스플레이용 DataFrame 생성
         display_df = st.session_state.items_df.copy()
