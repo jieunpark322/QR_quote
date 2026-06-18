@@ -936,88 +936,134 @@ def render_catalog_page():
         _render_membership_catalog_editor()
 
 
+def _clear_widget_keys(prefix: str) -> None:
+    """카드 삭제 후 stale 위젯 key 정리."""
+    for k in [k for k in st.session_state if k.startswith(prefix)]:
+        del st.session_state[k]
+
+
 def _render_qr_catalog_editor():
-    """QR 견적서용 평면 카탈로그 편집기."""
-    products = _load_products()
-    if not products:
-        df = pd.DataFrame([{
-            "code": "NEW-CODE",
-            "name": "(여기를 클릭해서 수정)",
-            "description": "",
-            "unit_price": 0,
-            "currency": "KRW",
-        }])
-    else:
-        df = pd.DataFrame(products)
-        for col, default in [("description", ""), ("currency", "KRW")]:
-            if col not in df.columns:
-                df[col] = default
+    """QR 견적서용 평면 카탈로그 편집기 (카드 형식 — 설명 줄바꿈 그대로 표시)."""
+    # draft 상태 초기화 (페이지 진입 시 1회)
+    if "_qr_catalog_draft" not in st.session_state:
+        st.session_state["_qr_catalog_draft"] = list(_load_products())
+    draft: list[dict] = st.session_state["_qr_catalog_draft"]
+
+    # 결손 필드 보완
+    for p in draft:
+        p.setdefault("description", "")
+        p.setdefault("currency", "KRW")
+        p.setdefault("unit_price", 0)
 
     st.caption(
-        "💡 설명/청구기준은 셀 안에서 Alt+Enter로 줄바꿈 입력 가능합니다. "
-        "행 높이를 크게 잡아 여러 줄이 보이게 표시하며, 견적서 PDF에도 "
-        "줄바꿈이 그대로 반영됩니다."
+        "💡 각 상품을 카드 형태로 편집합니다. 설명/청구기준은 줄바꿈을 입력한 그대로 "
+        "이 화면 · 견적서 PDF 양쪽에 반영돼요."
     )
 
-    edited = st.data_editor(
-        df[["code", "name", "description", "unit_price", "currency"]],
-        column_config={
-            "code": st.column_config.TextColumn(
-                "코드", help="고유 식별자 (영문/숫자/하이픈)", required=True,
-                width="small",
-            ),
-            "name": st.column_config.TextColumn(
-                "품목명", help="견적서에 표시되는 이름", required=True,
-                width="medium",
-            ),
-            "description": st.column_config.TextColumn(
-                "설명/청구기준",
-                help=("Alt+Enter 로 줄바꿈 입력. "
-                      "여러 줄 입력하면 표·PDF 모두 줄바꿈 그대로 반영됩니다."),
-                width="large",
-            ),
-            "unit_price": st.column_config.NumberColumn(
-                "단가 (원)", min_value=0, step=1000, format="₩%,d",
-                width="small",
-            ),
-            "currency": st.column_config.SelectboxColumn(
-                "통화", options=["KRW", "USD", "EUR", "JPY"],
-                width="small",
-            ),
-        },
-        num_rows="dynamic",
-        use_container_width=True,
-        hide_index=True,
-        row_height=100,
-        key="catalog_editor_qr",
-    )
-
-    st.divider()
-    col_save, col_info = st.columns([1, 3])
-    with col_save:
-        if st.button("💾 QR 카탈로그 저장", type="primary",
-                     use_container_width=True, key="save_qr_catalog"):
-            new_products = []
-            for _, row in edited.iterrows():
-                code = (row.get("code") or "").strip()
-                name = (row.get("name") or "").strip()
-                if not code or not name:
-                    continue
-                new_products.append({
-                    "code": code,
-                    "name": name,
-                    "description": (row.get("description") or "").strip(),
-                    "unit_price": int(row.get("unit_price") or 0),
-                    "currency": row.get("currency") or "KRW",
-                })
-            _save_products(new_products)
-            st.success(f"✅ {len(new_products)}개 상품 저장 완료. "
-                       "'QR 견적서 작성' 페이지로 가면 즉시 반영됩니다.")
-    with col_info:
-        st.caption(
-            "📝 **저장 후**: 견적서 작성 페이지의 카탈로그가 즉시 갱신됩니다. "
-            "엑셀 템플릿의 드롭다운은 `template` 명령으로 재생성해야 반영됩니다."
+    # 상단 액션 바
+    bar_search, bar_add, bar_save = st.columns([3, 1.2, 1.2])
+    with bar_search:
+        search = st.text_input(
+            "🔍 검색 (코드/품목명)", key="qrcat_search",
+            placeholder="키워드 입력...",
+            label_visibility="collapsed",
         )
+    with bar_add:
+        if st.button("+ 새 상품 추가", use_container_width=True,
+                     key="qrcat_add"):
+            draft.append({
+                "code": f"NEW-{len(draft) + 1}",
+                "name": "(새 상품)",
+                "description": "",
+                "unit_price": 0,
+                "currency": "KRW",
+            })
+            _clear_widget_keys("qrcat_field_")
+            st.rerun()
+    with bar_save:
+        save_clicked = st.button("💾 저장", type="primary",
+                                 use_container_width=True, key="qrcat_save")
+
+    if not draft:
+        st.info("아직 등록된 상품이 없습니다. **+ 새 상품 추가** 를 눌러 시작하세요.")
+        return
+
+    # 검색 필터
+    s = (search or "").strip().lower()
+    visible_indices = [
+        i for i, p in enumerate(draft)
+        if (not s) or s in (p.get("code", "") + " " + p.get("name", "")).lower()
+    ]
+
+    # 카드별 편집
+    currencies = ["KRW", "USD", "EUR", "JPY"]
+    delete_idx: int | None = None
+    for i in visible_indices:
+        p = draft[i]
+        with st.container(border=True):
+            top = st.columns([1.5, 2.5, 1.5, 1, 0.6])
+            with top[0]:
+                p["code"] = st.text_input(
+                    "코드", value=p.get("code", ""),
+                    key=f"qrcat_field_code_{i}",
+                )
+            with top[1]:
+                p["name"] = st.text_input(
+                    "품목명", value=p.get("name", ""),
+                    key=f"qrcat_field_name_{i}",
+                )
+            with top[2]:
+                p["unit_price"] = st.number_input(
+                    "단가 (원)", min_value=0, step=1000,
+                    value=int(p.get("unit_price") or 0),
+                    key=f"qrcat_field_price_{i}",
+                    format="%d",
+                )
+            with top[3]:
+                cur = p.get("currency", "KRW") if p.get("currency") in currencies else "KRW"
+                p["currency"] = st.selectbox(
+                    "통화", currencies, index=currencies.index(cur),
+                    key=f"qrcat_field_curr_{i}",
+                )
+            with top[4]:
+                st.write("")  # spacer
+                if st.button("🗑", key=f"qrcat_field_del_{i}",
+                             help="이 상품 삭제"):
+                    delete_idx = i
+            p["description"] = st.text_area(
+                "설명/청구기준 (줄바꿈 그대로 반영)",
+                value=p.get("description", ""),
+                key=f"qrcat_field_desc_{i}",
+                height=100,
+                placeholder="예: 매장 / 월\n월 정액제\n부가세 별도",
+            )
+
+    if delete_idx is not None:
+        draft.pop(delete_idx)
+        _clear_widget_keys("qrcat_field_")
+        st.rerun()
+
+    if save_clicked:
+        new_products = []
+        for p in draft:
+            code = (p.get("code") or "").strip()
+            name = (p.get("name") or "").strip()
+            if not code or not name:
+                continue
+            new_products.append({
+                "code": code,
+                "name": name,
+                "description": (p.get("description") or "").rstrip(),
+                "unit_price": int(p.get("unit_price") or 0),
+                "currency": p.get("currency") or "KRW",
+            })
+        _save_products(new_products)
+        # 저장 후 draft를 디스크 상태로 다시 동기화
+        st.session_state["_qr_catalog_draft"] = list(_load_products())
+        _clear_widget_keys("qrcat_field_")
+        st.success(f"✅ {len(new_products)}개 상품 저장 완료. "
+                   "'QR 견적서 작성' 페이지에 즉시 반영됩니다.")
+        st.rerun()
 
 
 def _render_membership_catalog_editor():
@@ -1027,140 +1073,209 @@ def _render_membership_catalog_editor():
         "멤버십 견적서 작성 화면에서 '구분' 이 일치하는 항목만 드롭다운에 나타납니다."
     )
 
-    products = _load_membership_products()
-    if not products:
-        df = pd.DataFrame([{
-            "code": "NEW-CODE",
-            "section": "멤버십 클라우드",
-            "subcategory": "초기구축비",
-            "name": "(여기를 클릭해서 수정)",
-            "billing_period": "1회성",
-            "unit_price": 0,
-            "unit_price_text": "",
-            "default_amount_text": "",
-            "notes": "",
-        }])
-        original_extra = {}
-    else:
-        df = pd.DataFrame(products)
-        # 사용자 표에서 다루지 않을 필드(sub_items, name_detail 등)는 보존
-        original_extra = {p["code"]: {k: v for k, v in p.items()
-                                       if k not in {"code", "section", "subcategory",
-                                                    "name", "billing_period", "unit_price",
-                                                    "unit_price_text", "default_amount_text",
-                                                    "notes"}}
-                          for p in products if p.get("code")}
-        # 누락 가능한 컬럼 보완
-        for col, default in [
-            ("section", ""), ("subcategory", ""), ("billing_period", ""),
-            ("unit_price", None), ("unit_price_text", ""),
-            ("default_amount_text", ""), ("notes", ""),
-        ]:
-            if col not in df.columns:
-                df[col] = default
+    # draft 상태 초기화
+    if "_mc_catalog_draft" not in st.session_state:
+        st.session_state["_mc_catalog_draft"] = list(_load_membership_products())
+    draft: list[dict] = st.session_state["_mc_catalog_draft"]
+
+    # 결손 필드 보완
+    for p in draft:
+        p.setdefault("description", "")
+        p.setdefault("notes", "")
+        p.setdefault("section", "")
+        p.setdefault("subcategory", "")
+        p.setdefault("billing_period", "")
+        p.setdefault("unit_price_text", "")
+        p.setdefault("default_amount_text", "")
 
     # 기존 카탈로그에 등록된 구분들 + 기본값
-    existing_sections = sorted({p.get("section", "") for p in products if p.get("section")})
+    existing_sections = sorted({p.get("section", "") for p in draft if p.get("section")})
     section_options = existing_sections or ["멤버십 클라우드", "오더 솔루션"]
+    subcategory_options = _DEFAULT_SUBCATEGORIES + ["기타"]
+    billing_options = ["", "1회성", "매월", "발생시", "발생월", "1개당"]
 
-    edited = st.data_editor(
-        df[["code", "section", "subcategory", "name", "billing_period",
-            "unit_price", "unit_price_text", "default_amount_text", "notes"]],
-        column_config={
-            "code": st.column_config.TextColumn(
-                "코드", help="고유 식별자 (예: MC-INIT-SERVER)", required=True,
-            ),
-            "section": st.column_config.SelectboxColumn(
-                "구분", help="대분류 (시나리오 내 그룹)",
-                options=section_options + ["기타"],
-            ),
-            "subcategory": st.column_config.SelectboxColumn(
-                "분류", help="중분류",
-                options=_DEFAULT_SUBCATEGORIES + ["기타"],
-            ),
-            "name": st.column_config.TextColumn(
-                "상세 구분", help="견적서에 표시되는 항목명", required=True,
-            ),
-            "billing_period": st.column_config.SelectboxColumn(
-                "기간", options=["", "1회성", "매월", "발생시", "발생월", "1개당"],
-                help="청구 주기",
-            ),
-            "unit_price": st.column_config.NumberColumn(
-                "단가 (숫자)", step=100000, format="₩%,d",
-                help="숫자 단가. 할인은 음수로 (예: -1000000). 텍스트는 옆 칸 사용.",
-            ),
-            "unit_price_text": st.column_config.TextColumn(
-                "단가(텍스트)",
-                help="예: '투입기간 X SW개발자 임금', '무상 제공', '7.9원 / 건'",
-            ),
-            "default_amount_text": st.column_config.TextColumn(
-                "기본 금액 텍스트",
-                help="비우면 자동 계산. '후청구', '협의 금액', '무상제공' 등 텍스트 입력 가능",
-            ),
-            "notes": st.column_config.TextColumn(
-                "비고", width="large",
-                help="Alt+Enter 로 줄바꿈 입력 가능. PDF에도 줄바꿈 반영.",
-            ),
-        },
-        num_rows="dynamic",
-        use_container_width=True,
-        hide_index=True,
-        row_height=100,
-        key="catalog_editor_mc",
+    st.caption(
+        "💡 각 상품을 카드 형태로 편집합니다. 비고 칸에 줄바꿈을 입력하면 "
+        "이 화면 · 견적서 PDF 양쪽에 그대로 반영돼요. "
+        "종량제 하위 항목(SMS/LMS 등)의 `sub_items` 는 저장 시 자동 보존됩니다."
     )
 
-    st.divider()
-    col_save, col_info = st.columns([1, 3])
-    with col_save:
-        if st.button("💾 멤버십 카탈로그 저장", type="primary",
-                     use_container_width=True, key="save_mc_catalog"):
-            new_products = []
-            for _, row in edited.iterrows():
-                code = (row.get("code") or "").strip()
-                name = (row.get("name") or "").strip()
-                if not code or not name:
-                    continue
-                item: dict = {
-                    "code": code,
-                    "section": (row.get("section") or "").strip(),
-                    "subcategory": (row.get("subcategory") or "").strip(),
-                    "name": name,
-                }
-                bp = row.get("billing_period")
-                if isinstance(bp, str) and bp.strip():
-                    item["billing_period"] = bp.strip()
-                up = row.get("unit_price")
-                if pd.notna(up) and up not in ("", None):
-                    try:
-                        item["unit_price"] = float(up)
-                    except (TypeError, ValueError):
-                        item["unit_price"] = None
-                else:
-                    item["unit_price"] = None
-                upt = row.get("unit_price_text")
-                if isinstance(upt, str) and upt.strip():
-                    item["unit_price_text"] = upt.strip()
-                amt_text = row.get("default_amount_text")
-                if isinstance(amt_text, str) and amt_text.strip():
-                    item["default_amount_text"] = amt_text.strip()
-                notes = row.get("notes")
-                if isinstance(notes, str) and notes.strip():
-                    item["notes"] = notes.strip()
-                # 기존 sub_items / name_detail 등 추가 필드는 보존
-                extra = original_extra.get(code, {})
-                item.update(extra)
-                new_products.append(item)
-            _save_membership_products(new_products)
-            st.success(
-                f"✅ {len(new_products)}개 멤버십 상품 저장 완료. "
-                "'멤버십 견적서 작성' 페이지로 가면 즉시 반영됩니다."
-            )
-    with col_info:
-        st.caption(
-            "ℹ️ **종량제 하위 항목**(SMS/LMS 등) 은 이 표에서 편집하지 않습니다. "
-            "기존 항목의 `sub_items` 는 저장 시 자동으로 보존됩니다. "
-            "새 종량제 항목 추가가 필요하면 `catalog/membership_products.json` 직접 편집을 권장합니다."
+    # 상단 액션 바
+    bar_search, bar_sec, bar_add, bar_save = st.columns([2.2, 1.5, 1.2, 1.2])
+    with bar_search:
+        search = st.text_input(
+            "🔍 검색", key="mccat_search", placeholder="코드/품목명...",
+            label_visibility="collapsed",
         )
+    with bar_sec:
+        section_filter = st.selectbox(
+            "구분 필터", ["(전체)"] + section_options, key="mccat_sec_filter",
+            label_visibility="collapsed",
+        )
+    with bar_add:
+        if st.button("+ 새 상품 추가", use_container_width=True, key="mccat_add"):
+            draft.append({
+                "code": f"NEW-{len(draft) + 1}",
+                "section": section_options[0] if section_options else "",
+                "subcategory": "기타",
+                "name": "(새 상품)",
+                "billing_period": "1회성",
+                "unit_price": 0,
+                "unit_price_text": "",
+                "default_amount_text": "",
+                "notes": "",
+            })
+            _clear_widget_keys("mccat_field_")
+            st.rerun()
+    with bar_save:
+        save_clicked = st.button("💾 저장", type="primary",
+                                 use_container_width=True, key="mccat_save")
+
+    if not draft:
+        st.info("아직 등록된 상품이 없습니다. **+ 새 상품 추가** 를 눌러 시작하세요.")
+        return
+
+    # 필터링
+    s = (search or "").strip().lower()
+    visible_indices = []
+    for i, p in enumerate(draft):
+        if s and s not in (p.get("code", "") + " " + p.get("name", "")).lower():
+            continue
+        if section_filter != "(전체)" and p.get("section") != section_filter:
+            continue
+        visible_indices.append(i)
+
+    delete_idx: int | None = None
+    for i in visible_indices:
+        p = draft[i]
+        with st.container(border=True):
+            row1 = st.columns([1.5, 1.3, 1.3, 2.5, 0.6])
+            with row1[0]:
+                p["code"] = st.text_input(
+                    "코드", value=p.get("code", ""),
+                    key=f"mccat_field_code_{i}",
+                )
+            with row1[1]:
+                sec = p.get("section", "") or ""
+                sec_opts = list(dict.fromkeys(section_options + [sec] if sec else section_options))
+                p["section"] = st.selectbox(
+                    "구분", sec_opts + ["기타"],
+                    index=(sec_opts + ["기타"]).index(sec) if sec in (sec_opts + ["기타"]) else 0,
+                    key=f"mccat_field_sec_{i}",
+                )
+            with row1[2]:
+                sub = p.get("subcategory", "기타") or "기타"
+                sub_opts = list(dict.fromkeys(subcategory_options + ([sub] if sub else [])))
+                p["subcategory"] = st.selectbox(
+                    "분류", sub_opts,
+                    index=sub_opts.index(sub) if sub in sub_opts else 0,
+                    key=f"mccat_field_sub_{i}",
+                )
+            with row1[3]:
+                p["name"] = st.text_input(
+                    "상세 구분", value=p.get("name", ""),
+                    key=f"mccat_field_name_{i}",
+                )
+            with row1[4]:
+                st.write("")
+                if st.button("🗑", key=f"mccat_field_del_{i}",
+                             help="이 상품 삭제"):
+                    delete_idx = i
+
+            row2 = st.columns([1.2, 1.5, 2, 2])
+            with row2[0]:
+                bp = p.get("billing_period", "") or ""
+                p["billing_period"] = st.selectbox(
+                    "기간", billing_options,
+                    index=billing_options.index(bp) if bp in billing_options else 0,
+                    key=f"mccat_field_bp_{i}",
+                )
+            with row2[1]:
+                up_val = p.get("unit_price")
+                p["unit_price"] = st.number_input(
+                    "단가 (숫자)", step=100000,
+                    value=int(up_val) if up_val not in (None, "") else 0,
+                    key=f"mccat_field_price_{i}",
+                    format="%d",
+                    help="텍스트 단가는 옆 칸에. 할인은 음수로.",
+                )
+            with row2[2]:
+                p["unit_price_text"] = st.text_input(
+                    "단가(텍스트)", value=p.get("unit_price_text") or "",
+                    key=f"mccat_field_uptext_{i}",
+                    placeholder="예: 투입기간 X SW개발자 임금",
+                )
+            with row2[3]:
+                p["default_amount_text"] = st.text_input(
+                    "기본 금액 텍스트", value=p.get("default_amount_text") or "",
+                    key=f"mccat_field_amttext_{i}",
+                    placeholder="예: 후청구, 협의 금액, 무상제공",
+                )
+
+            p["notes"] = st.text_area(
+                "비고 (줄바꿈 그대로 반영)", value=p.get("notes") or "",
+                key=f"mccat_field_notes_{i}",
+                height=80,
+                placeholder="예: 신규 제휴사 우대\n협상에 따라 조정 가능",
+            )
+
+    if delete_idx is not None:
+        draft.pop(delete_idx)
+        _clear_widget_keys("mccat_field_")
+        st.rerun()
+
+    if save_clicked:
+        # 기존 카탈로그에서 sub_items / name_detail 등 보존
+        original_products = _load_membership_products()
+        original_extra = {
+            p["code"]: {k: v for k, v in p.items()
+                        if k not in {"code", "section", "subcategory", "name",
+                                     "billing_period", "unit_price",
+                                     "unit_price_text", "default_amount_text", "notes"}}
+            for p in original_products if p.get("code")
+        }
+        new_products = []
+        for p in draft:
+            code = (p.get("code") or "").strip()
+            name = (p.get("name") or "").strip()
+            if not code or not name:
+                continue
+            item: dict = {
+                "code": code,
+                "section": (p.get("section") or "").strip(),
+                "subcategory": (p.get("subcategory") or "").strip(),
+                "name": name,
+            }
+            bp = (p.get("billing_period") or "").strip()
+            if bp:
+                item["billing_period"] = bp
+            up = p.get("unit_price")
+            if up not in (None, ""):
+                try:
+                    item["unit_price"] = float(up)
+                except (TypeError, ValueError):
+                    item["unit_price"] = None
+            else:
+                item["unit_price"] = None
+            upt = (p.get("unit_price_text") or "").strip()
+            if upt:
+                item["unit_price_text"] = upt
+            amt = (p.get("default_amount_text") or "").strip()
+            if amt:
+                item["default_amount_text"] = amt
+            notes = (p.get("notes") or "").rstrip()
+            if notes:
+                item["notes"] = notes
+            item.update(original_extra.get(code, {}))
+            new_products.append(item)
+        _save_membership_products(new_products)
+        st.session_state["_mc_catalog_draft"] = list(_load_membership_products())
+        _clear_widget_keys("mccat_field_")
+        st.success(
+            f"✅ {len(new_products)}개 멤버십 상품 저장 완료. "
+            "'멤버십 견적서 작성' 페이지에 즉시 반영됩니다."
+        )
+        st.rerun()
 
 
 # ═════════════════════════════════════════════════════════════
