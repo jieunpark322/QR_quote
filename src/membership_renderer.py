@@ -131,7 +131,7 @@ def _compute_section_widths(section: MembershipSection,
                             usable_cm: float = 18.8) -> list:
     """콘텐츠 길이 + 중요도 기반으로 컬럼 너비를 유동 산출.
 
-    [구분, 분류, 상세 구분, 기간, 단가, 할인율, 금액, 비고]
+    [구분, 분류, 상세 구분, 기간, 단가, 금액, 비고]
     """
     cats = section.categories
     items = [it for cat in cats for it in cat.items]
@@ -179,8 +179,6 @@ def _compute_section_widths(section: MembershipSection,
             unit_price_strings.append(it.unit_price_text)
     unit_price_len = _max_line_len(unit_price_strings + ["단가"])
 
-    has_discount = any(it.discount_rate for it in items)
-
     amount_strings = []
     for it in items:
         if it.amount_text:
@@ -206,16 +204,13 @@ def _compute_section_widths(section: MembershipSection,
         detail_len * CHAR_CM,
         period_len * CHAR_CM,
         unit_price_len * CHAR_CM,
-        2 * CHAR_CM,  # 할인율 ("40%" 또는 "-")
         amount_len * CHAR_CM,
         notes_len * CHAR_CM,
     ]
 
     # 최소·최대 제약
-    min_widths = [1.4, 1.0, 3.5, 0.9, 1.5, 0.7, 1.5, 1.0]
-    max_widths = [3.0, 2.2, 7.5, 1.8, 4.0, 1.0, 3.5, 3.0]
-    if not has_discount:
-        max_widths[5] = 0.8  # 할인율 모두 없으면 더 좁게
+    min_widths = [1.4, 1.0, 3.5, 0.9, 1.5, 1.5, 1.0]
+    max_widths = [3.0, 2.2, 7.5, 1.8, 4.0, 3.5, 3.0]
 
     constrained = [
         min(max(raw_w, min_widths[i]), max_widths[i])
@@ -230,7 +225,7 @@ def _compute_section_widths(section: MembershipSection,
     else:
         # 남는 공간은 콘텐츠 폭이 큰 컬럼(상세구분, 단가, 금액)에 가중 분배
         slack = usable_cm - total
-        slack_weights = [0.3, 0.2, 2.0, 0.2, 1.0, 0.0, 0.8, 0.5]
+        slack_weights = [0.3, 0.2, 2.0, 0.2, 1.0, 0.8, 0.5]
         sw_sum = sum(slack_weights)
         if sw_sum > 0:
             constrained = [
@@ -461,8 +456,7 @@ def _render_section_table(doc, section: MembershipSection, brand: Brand) -> None
     primary_hex = brand.branding.colors.primary.lstrip("#")
     light_bg = "F0F2F8"
 
-    # 표 컬럼: [구분 | 분류 | 상세구분 | 기간 | 단가 | 할인율 | 금액 | 비고]
-    # 단순화를 위해 [구분, 분류, 상세 구분 | 기간 | 단가 | 할인율 | 금액 | 비고] 8개
+    # 표 컬럼: [구분 | 분류 | 상세구분 | 기간 | 단가 | 금액 | 비고] 7개
     # 첫 컬럼(구분)은 첫 행에만 표시하고 나머지는 수직 병합
 
     # 행 수 계산: 헤더(1) + 각 분류별 [항목들 + (옵션) 합계 1행] + 섹션 합계 1행
@@ -475,12 +469,12 @@ def _render_section_table(doc, section: MembershipSection, brand: Brand) -> None
         body_rows += 1
     total_rows = 1 + body_rows  # +1 헤더
 
-    cols_n = 8
+    cols_n = 7
     table = doc.add_table(rows=total_rows, cols=cols_n)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     _set_table_borders(table, color="BFBFBF", size=4)
 
-    headers = ["구분", "분류", "상세 구분", "기간", "단가", "할인율", "금액", "비고"]
+    headers = ["구분", "분류", "상세 구분", "기간", "단가", "금액", "비고"]
     # 콘텐츠 길이 + 중요도 기반 유동 컬럼 너비
     widths = _compute_section_widths(section)
     _render_table_header_row(table, 0, headers, widths, font, primary_hex)
@@ -528,16 +522,16 @@ def _render_section_table(doc, section: MembershipSection, brand: Brand) -> None
                        bg=DISCOUNT_BG if cat_is_discount else None)
             _fill_cell(table.cell(r, 1), "", font=font,
                        bg=DISCOUNT_BG if cat_is_discount else None)
-            label_cell = table.cell(r, 2).merge(table.cell(r, 5))
+            label_cell = table.cell(r, 2).merge(table.cell(r, 4))
             _fill_cell(label_cell, label, font=font, size_pt=8, bold=True,
                        align=WD_ALIGN_PARAGRAPH.RIGHT,
                        bg=sub_bg, color=sub_color)
-            _fill_cell(table.cell(r, 6),
+            _fill_cell(table.cell(r, 5),
                        _money(subtotal) if subtotal else "-",
                        font=font, size_pt=8.5, bold=True,
                        align=WD_ALIGN_PARAGRAPH.RIGHT,
                        bg=sub_bg, color=sub_color)
-            _fill_cell(table.cell(r, 7), "-", font=font, size_pt=8,
+            _fill_cell(table.cell(r, 6), "-", font=font, size_pt=8,
                        align=WD_ALIGN_PARAGRAPH.CENTER,
                        bg=sub_bg, color=sub_color)
             r += 1
@@ -550,7 +544,7 @@ def _render_section_table(doc, section: MembershipSection, brand: Brand) -> None
     if section_first_row != section_body_last:
         _merge_vertical(table, 0, section_first_row, section_body_last)
 
-    # 섹션 예상 총 금액 행 (col 2~7 가로 병합으로 한 줄에 표시)
+    # 섹션 예상 총 금액 행 (col 2~6 가로 병합으로 한 줄에 표시)
     if section.show_section_total:
         by_period = section_subtotals_by_period(section)
         parts = [f"{period}: {_money(amt)}" for period, amt in by_period.items()]
@@ -565,8 +559,8 @@ def _render_section_table(doc, section: MembershipSection, brand: Brand) -> None
                    align=WD_ALIGN_PARAGRAPH.CENTER,
                    bg=brand.branding.colors.primary.lstrip("#"),
                    color=RGBColor(0xFF, 0xFF, 0xFF))
-        # col 2~7 가로 병합해서 넓은 한 셀로
-        merged_cell = table.cell(r, 2).merge(table.cell(r, 7))
+        # col 2~6 가로 병합해서 넓은 한 셀로
+        merged_cell = table.cell(r, 2).merge(table.cell(r, 6))
         _fill_cell(merged_cell, total_text,
                    font=font, size_pt=9, bold=True,
                    align=WD_ALIGN_PARAGRAPH.LEFT, bg=light_bg)
@@ -649,13 +643,7 @@ def _render_item_row_in_table(table, row_idx: int, item: MembershipLineItem,
                font=font, size_pt=7.5, align=up_align,
                bold=is_discount, color=disc_color, bg=disc_bg)
 
-    # 컬럼 5: 할인율
-    dr_text = f"{int(item.discount_rate * 100)}%" if item.discount_rate else "-"
-    _fill_cell(table.cell(row_idx, 5), dr_text,
-               font=font, size_pt=7.5, align=WD_ALIGN_PARAGRAPH.CENTER,
-               bold=is_discount, color=disc_color, bg=disc_bg)
-
-    # 컬럼 6: 금액
+    # 컬럼 5: 금액
     eff = item.effective_amount()
     if item.amount_text:
         amt_text = item.amount_text
@@ -663,13 +651,13 @@ def _render_item_row_in_table(table, row_idx: int, item: MembershipLineItem,
         amt_text = _money(eff)
     else:
         amt_text = "-"
-    _fill_cell(table.cell(row_idx, 6), amt_text,
+    _fill_cell(table.cell(row_idx, 5), amt_text,
                font=font, size_pt=8, bold=True,
                align=WD_ALIGN_PARAGRAPH.RIGHT,
                color=disc_color, bg=disc_bg)
 
-    # 컬럼 7: 비고
-    _fill_cell(table.cell(row_idx, 7), item.notes or "-",
+    # 컬럼 6: 비고
+    _fill_cell(table.cell(row_idx, 6), item.notes or "-",
                font=font, size_pt=7.5, align=WD_ALIGN_PARAGRAPH.LEFT,
                bold=is_discount, color=disc_color, bg=disc_bg)
 

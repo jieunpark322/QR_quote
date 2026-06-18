@@ -127,13 +127,19 @@ def _save_labels(labels_dict: dict) -> None:
 # ═════════════════════════════════════════════════════════════
 
 # 편집 가능 컬럼 (공급가는 계산 결과라 별도)
-ITEM_COLUMNS = ["항목", "설명", "단가", "기간(횟수)", "수량", "비고"]
+ITEM_COLUMNS = ["분류", "항목", "설명", "단가", "기간(횟수)", "수량", "비고"]
 # 화면 표시 순서 (공급가 포함)
-DISPLAY_COLUMNS = ["항목", "설명", "단가", "기간(횟수)", "수량", "공급가", "비고"]
+DISPLAY_COLUMNS = ["분류", "항목", "설명", "단가", "기간(횟수)", "수량", "공급가", "비고"]
+
+# 분류 선택지
+ITEM_KIND_NORMAL = "📋 품목"
+ITEM_KIND_DISCOUNT = "💰 할인"
+ITEM_KINDS = [ITEM_KIND_NORMAL, ITEM_KIND_DISCOUNT]
 
 
 def _empty_items_df() -> pd.DataFrame:
     return pd.DataFrame(columns=ITEM_COLUMNS).astype({
+        "분류": "string",
         "항목": "string",
         "설명": "string",
         "단가": "Int64",
@@ -150,6 +156,7 @@ def _ensure_items_state():
 
 def _add_catalog_row(product: dict):
     new_row = {
+        "분류": ITEM_KIND_NORMAL,
         "항목": product["name"],
         "설명": product.get("description", ""),
         "단가": int(product.get("unit_price", 0)),
@@ -165,18 +172,21 @@ def _add_catalog_row(product: dict):
 
 def _add_blank_row():
     df = st.session_state.items_df
+    blank = {c: None for c in ITEM_COLUMNS}
+    blank["분류"] = ITEM_KIND_NORMAL
     st.session_state.items_df = pd.concat(
-        [df, pd.DataFrame([{c: None for c in ITEM_COLUMNS}])],
+        [df, pd.DataFrame([blank])],
         ignore_index=True,
     )
 
 
 def _add_discount_row():
-    """할인 행 추가 — 단가가 음수로 미리 셋팅됨. 사용자가 협상가로 조정."""
+    """할인 행 추가 — 분류 '💰 할인' + 음수 단가. 사용자가 협상가로 조정."""
     df = st.session_state.items_df
     new_row = {
+        "분류": ITEM_KIND_DISCOUNT,
         "항목": "할인",
-        "설명": "협상가 (음수)",
+        "설명": "협상가 (음수 단가)",
         "단가": -500000,
         "기간(횟수)": None,
         "수량": 1,
@@ -335,12 +345,18 @@ def render_quote_page():
     else:
         # 공급가 컬럼을 계산해서 디스플레이용 DataFrame 생성
         display_df = st.session_state.items_df.copy()
+        # 분류 값이 비었으면 기본 '품목'으로 채움
+        display_df["분류"] = display_df["분류"].fillna(ITEM_KIND_NORMAL).replace("", ITEM_KIND_NORMAL)
         display_df["공급가"] = display_df.apply(_row_amount, axis=1).astype("Int64")
         display_df = display_df[DISPLAY_COLUMNS]
 
         edited_df = st.data_editor(
             display_df,
             column_config={
+                "분류": st.column_config.SelectboxColumn(
+                    "분류", options=ITEM_KINDS, required=True,
+                    help="'💰 할인' 선택 시 단가는 음수로 입력. 할인 행은 아래 빨강 박스에 음영 처리됩니다.",
+                ),
                 "항목": st.column_config.TextColumn("항목", required=True),
                 "설명": st.column_config.TextColumn("설명"),
                 "단가": st.column_config.NumberColumn(
@@ -374,6 +390,37 @@ def render_quote_page():
         st.session_state.items_df = edited_core
         if changed:
             st.rerun()
+
+        # ── 할인 행 음영 미리보기 (분류=할인인 행만 빨강 박스에 다시 표시) ──
+        disc_mask = edited_df["분류"].astype(str) == ITEM_KIND_DISCOUNT
+        disc_rows = edited_df[disc_mask]
+        if not disc_rows.empty:
+            disc_amounts = disc_rows.apply(_row_amount, axis=1)
+            disc_total = int(pd.to_numeric(disc_amounts, errors="coerce").fillna(0).sum())
+            st.markdown(
+                f"""
+<div style="background:#FDECEA; border-left:4px solid #C0392B;
+            border-radius:6px; padding:10px 14px; margin:6px 0 4px;">
+  <div style="color:#C0392B; font-weight:700; font-size:0.95rem;">
+    💰 할인 적용 내역 · {len(disc_rows)}건 · 차감 합계 <span style="font-size:1.05rem">₩{abs(disc_total):,}</span>
+  </div>
+  <div style="color:#7B241C; font-size:0.82rem; margin-top:3px;">
+    아래 행은 할인 분류로 분류된 행입니다. PDF에서도 빨강으로 음영·강조 표시됩니다.
+  </div>
+</div>
+                """,
+                unsafe_allow_html=True,
+            )
+            disc_preview = disc_rows[["항목", "설명", "단가", "공급가", "비고"]].copy()
+            st.dataframe(
+                disc_preview,
+                hide_index=True,
+                use_container_width=True,
+                column_config={
+                    "단가": st.column_config.NumberColumn("단가", format="₩%d"),
+                    "공급가": st.column_config.NumberColumn("공급가", format="₩%d"),
+                },
+            )
 
     if not edited_df.empty:
         amounts = edited_df.apply(_row_amount, axis=1)
@@ -1178,7 +1225,7 @@ def _mc_items_to_df(items: list[dict]) -> pd.DataFrame:
     if not items:
         return pd.DataFrame(columns=[
             "분류", "상세 구분", "기간", "단가", "단가(텍스트)",
-            "할인율(%)", "금액 텍스트", "비고",
+            "금액 텍스트", "비고",
         ])
     rows = []
     for it in items:
@@ -1188,7 +1235,6 @@ def _mc_items_to_df(items: list[dict]) -> pd.DataFrame:
             "기간": it.get("billing_period", ""),
             "단가": it.get("unit_price"),
             "단가(텍스트)": it.get("unit_price_text", ""),
-            "할인율(%)": int(it.get("discount_rate", 0) * 100) if it.get("discount_rate") else None,
             "금액 텍스트": it.get("amount_text", ""),
             "비고": it.get("notes", ""),
         })
@@ -1227,14 +1273,6 @@ def _df_to_section_categories(df: pd.DataFrame) -> list[dict]:
         upt = row.get("단가(텍스트)")
         if isinstance(upt, str) and upt.strip():
             item["unit_price_text"] = upt.strip()
-        dr = row.get("할인율(%)")
-        if pd.notna(dr) and dr not in ("", None):
-            try:
-                drv = float(dr)
-                if drv > 0:
-                    item["discount_rate"] = drv / 100
-            except (TypeError, ValueError):
-                pass
         amt_text = row.get("금액 텍스트")
         if isinstance(amt_text, str) and amt_text.strip():
             item["amount_text"] = amt_text.strip()
@@ -1599,7 +1637,6 @@ def _render_section_editor(s_idx: int, sec_idx: int, section: dict,
                     "기간": p.get("billing_period", ""),
                     "단가": p.get("unit_price"),
                     "단가(텍스트)": p.get("unit_price_text", ""),
-                    "할인율(%)": None,
                     "금액 텍스트": p.get("default_amount_text", ""),
                     "비고": p.get("notes", ""),
                 }
@@ -1638,7 +1675,6 @@ def _render_section_editor(s_idx: int, sec_idx: int, section: dict,
                 "단가(텍스트)",
                 help="숫자로 표현 불가한 단가 (예: '투입기간 X SW개발자 임금')",
             ),
-            "할인율(%)": st.column_config.NumberColumn("할인율(%)", min_value=0, max_value=100),
             "금액 텍스트": st.column_config.TextColumn(
                 "금액 텍스트",
                 help="비워두면 자동 계산. '후청구', '협의 금액' 등 텍스트도 입력 가능.",

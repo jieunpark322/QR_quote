@@ -180,7 +180,6 @@
                   "name": "브랜드 초기 설정 / 테스트 / 검수 비용",
                   "billing_period": "1회성",
                   "unit_price": 25000000,
-                  "discount_rate": 0.4,
                   "notes": "-"
                 },
                 {
