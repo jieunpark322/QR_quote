@@ -87,6 +87,8 @@ MC_AUTOSAVE_PATH = AUTOSAVE_DIR / "membership_quote.json"
 
 QR_HISTORY_DIR = PROJECT_ROOT / "output" / "_history" / "qr"
 QR_TEMPLATE_DIR = PROJECT_ROOT / "output" / "_templates" / "qr"
+MC_HISTORY_DIR = PROJECT_ROOT / "output" / "_history" / "mc"
+MC_TEMPLATE_DIR = PROJECT_ROOT / "output" / "_templates" / "mc"
 HISTORY_LIMIT = 10
 
 # 자동 저장/복원할 위젯 키들
@@ -311,6 +313,218 @@ def _qr_delete_template(path: Path) -> None:
         path.unlink(missing_ok=True)
     except OSError:
         pass
+
+
+# ── 멤버십 견적서 — 최근 다운로드 / 표본 헬퍼 ──
+
+def _mc_snapshot_payload() -> dict:
+    """현재 멤버십 견적서 입력 상태 전체."""
+    doc = st.session_state.get("mc_doc")
+    return {
+        "mc_doc": doc,
+        "mc_issuer_name": st.session_state.get("mc_issuer_name"),
+        "mc_issuer_title": st.session_state.get("mc_issuer_title"),
+        "mc_issuer_phone": st.session_state.get("mc_issuer_phone"),
+        "mc_issuer_email": st.session_state.get("mc_issuer_email"),
+    }
+
+
+def _mc_apply_snapshot(payload: dict) -> None:
+    if payload.get("mc_doc"):
+        st.session_state["mc_doc"] = payload["mc_doc"]
+    for k in ("mc_issuer_name", "mc_issuer_title",
+              "mc_issuer_phone", "mc_issuer_email"):
+        v = payload.get(k)
+        if v not in (None, ""):
+            st.session_state[k] = v
+
+
+def _mc_save_history(snapshot: dict, document_id: str) -> None:
+    """멤버십 견적서 생성/미리보기 시 히스토리에 저장 (같은 document_id 면 1개로 유지)."""
+    MC_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+    from datetime import datetime
+    safe_id = "".join(c for c in document_id if c.isalnum() or c in "-_")[:40]
+    for old in MC_HISTORY_DIR.glob(f"*_{safe_id}.json"):
+        try:
+            old.unlink(missing_ok=True)
+        except OSError:
+            pass
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    doc = (snapshot.get("mc_doc") or {})
+    cp_name = (doc.get("counterparty") or {}).get("name") or ""
+    title = doc.get("title") or "멤버십 클라우드 견적서"
+    payload = {
+        **snapshot,
+        "_document_id": document_id,
+        "_saved_at": datetime.now().isoformat(timespec="seconds"),
+        "_subject": title,
+        "_cp_name": cp_name,
+    }
+    path = MC_HISTORY_DIR / f"{ts}_{safe_id}.json"
+    _write_json_safe(path, payload)
+    files = sorted(MC_HISTORY_DIR.glob("*.json"),
+                   key=lambda p: p.stat().st_mtime, reverse=True)
+    for old in files[HISTORY_LIMIT:]:
+        try:
+            old.unlink()
+        except OSError:
+            pass
+
+
+def _mc_list_history() -> list[tuple[Path, dict]]:
+    if not MC_HISTORY_DIR.exists():
+        return []
+    files = sorted(MC_HISTORY_DIR.glob("*.json"),
+                   key=lambda p: p.stat().st_mtime, reverse=True)[:HISTORY_LIMIT]
+    result = []
+    for p in files:
+        data = _read_json_safe(p)
+        if data:
+            result.append((p, data))
+    return result
+
+
+def _mc_save_template(name: str, snapshot: dict) -> bool:
+    name = (name or "").strip()
+    if not name:
+        return False
+    MC_TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
+    safe = "".join(c for c in name if c.isalnum() or c in " -_가-힣")[:60].strip()
+    if not safe:
+        return False
+    from datetime import datetime
+    payload = {
+        **snapshot,
+        "_template_name": name,
+        "_saved_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    path = MC_TEMPLATE_DIR / f"{safe}.json"
+    _write_json_safe(path, payload)
+    return True
+
+
+def _mc_list_templates() -> list[tuple[Path, dict]]:
+    if not MC_TEMPLATE_DIR.exists():
+        return []
+    files = sorted(MC_TEMPLATE_DIR.glob("*.json"),
+                   key=lambda p: p.stat().st_mtime, reverse=True)
+    result = []
+    for p in files:
+        data = _read_json_safe(p)
+        if data:
+            result.append((p, data))
+    return result
+
+
+def _mc_delete_template(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _render_mc_recent_panel() -> None:
+    """📂 멤버십 최근 다운로드 견적서."""
+    history = _mc_list_history()
+    label = (f"📂 최근 다운로드 견적서 ({len(history)})"
+             if history else "📂 최근 다운로드 견적서")
+    with st.expander(label, expanded=False):
+        st.caption(
+            "견적서 **생성** 또는 **미리보기** 를 누르면 자동으로 **최근 10개**가 보관됩니다. "
+            "같은 견적서를 DOCX·PDF 둘 다 받아도 한 건으로만 남고, "
+            "다시 불러와 이어서 편집할 수 있어요."
+        )
+        if not history:
+            st.caption("아직 생성/미리보기한 견적서가 없습니다.")
+            return
+        delete_path = None
+        for i, (path, data) in enumerate(history):
+            saved = (data.get("_saved_at") or "")[:16].replace("T", " ")
+            subj = data.get("_subject") or "(건명 없음)"
+            cp = data.get("_cp_name") or "(수신처 없음)"
+            with st.container(border=True):
+                rcols = st.columns([6, 1.2, 1.2])
+                with rcols[0]:
+                    st.markdown(
+                        f"🕐 {saved}<br>"
+                        f"<span style='color:#555'>**{cp}**  ·  {subj}</span>",
+                        unsafe_allow_html=True,
+                    )
+                with rcols[1]:
+                    if st.button("📥 불러오기",
+                                 key=f"mc_hist_load_{i}",
+                                 use_container_width=True):
+                        _mc_apply_snapshot(data)
+                        st.success("✅ 견적서를 불러왔습니다.")
+                        st.rerun()
+                with rcols[2]:
+                    if st.button("🗑 삭제",
+                                 key=f"mc_hist_del_{i}",
+                                 use_container_width=True):
+                        delete_path = path
+        if delete_path is not None:
+            try:
+                delete_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            st.rerun()
+
+
+def _render_mc_template_panel() -> None:
+    """📋 멤버십 견적서 표본."""
+    templates = _mc_list_templates()
+    label = (f"📋 견적서 표본 ({len(templates)})"
+             if templates else "📋 견적서 표본")
+    with st.expander(label, expanded=False):
+        st.caption(
+            "**표본**은 자주 쓰는 멤버십 견적서 형태를 수기 저장해 두는 공간입니다. "
+            "정석 케이스를 미리 만들어 두고, 새 견적서 작성할 때 끌어와서 빠르게 시작하세요."
+        )
+        save_col1, save_col2 = st.columns([3, 2])
+        with save_col1:
+            tpl_name = st.text_input(
+                "표본 이름", placeholder="예: 신규 제휴사 패키지",
+                key="mc_tpl_name", label_visibility="collapsed",
+            )
+        with save_col2:
+            if st.button("💾 현재 입력을 표본으로 저장",
+                         use_container_width=True, key="mc_tpl_save"):
+                if _mc_save_template(tpl_name, _mc_snapshot_payload()):
+                    st.success(f"✅ 표본 저장: {tpl_name}")
+                    st.rerun()
+                else:
+                    st.warning("표본 이름을 입력해 주세요.")
+        st.divider()
+        if not templates:
+            st.caption("저장된 표본이 없습니다.")
+            return
+        delete_path = None
+        for i, (path, data) in enumerate(templates):
+            name = data.get("_template_name") or path.stem
+            saved = (data.get("_saved_at") or "")[:10]
+            with st.container(border=True):
+                rcols = st.columns([6, 1.2, 1.2])
+                with rcols[0]:
+                    st.markdown(
+                        f"📋 **{name}**<br>"
+                        f"<span style='color:#777;font-size:0.85rem'>저장일 {saved}</span>",
+                        unsafe_allow_html=True,
+                    )
+                with rcols[1]:
+                    if st.button("📥 불러오기",
+                                 key=f"mc_tpl_load_{i}",
+                                 use_container_width=True):
+                        _mc_apply_snapshot(data)
+                        st.success(f"✅ 표본 '{name}' 을 불러왔습니다.")
+                        st.rerun()
+                with rcols[2]:
+                    if st.button("🗑 삭제",
+                                 key=f"mc_tpl_del_{i}",
+                                 use_container_width=True):
+                        delete_path = path
+        if delete_path is not None:
+            _mc_delete_template(delete_path)
+            st.rerun()
 
 
 def _inject_beforeunload(active: bool) -> None:
@@ -2122,6 +2336,10 @@ def render_membership_quote_page():
 
     st.title("🏢 멤버십 클라우드 견적서 작성")
 
+    # ─── 최근 다운로드 견적서 / 견적서 표본 ───
+    _render_mc_recent_panel()
+    _render_mc_template_panel()
+
     # ─── 0. 발행 담당자 정보 ───
     try:
         _brand_for_default = load_brand(PROJECT_ROOT, "softment")
@@ -2595,6 +2813,8 @@ def _build_membership_artifacts(state: dict, soffice_available: bool,
         status.update(label="✅ 생성 완료", state="complete")
 
     docx_bytes = docx_path.read_bytes()
+    # 최근 다운로드 견적서 히스토리에 저장 (같은 document_id 면 1개로 유지)
+    _mc_save_history(_mc_snapshot_payload(), document.document_id)
     return document.document_id, docx_bytes, pdf_bytes
 
 
