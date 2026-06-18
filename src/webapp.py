@@ -174,6 +174,15 @@ def _mc_autosave_load_once() -> None:
         return
     if "mc_doc" not in st.session_state and payload.get("mc_doc"):
         st.session_state["mc_doc"] = payload["mc_doc"]
+    if "mc_items_df" not in st.session_state and payload.get("mc_items"):
+        try:
+            items = payload["mc_items"]
+            for it in items:
+                if it.get("분류") == "💰 할인":
+                    it["분류"] = "💰 할인행"
+            st.session_state["mc_items_df"] = pd.DataFrame(items)
+        except (ValueError, KeyError):
+            pass
     for k in ("mc_issuer_name", "mc_issuer_title",
               "mc_issuer_phone", "mc_issuer_email"):
         v = payload.get(k)
@@ -183,14 +192,20 @@ def _mc_autosave_load_once() -> None:
 
 def _mc_autosave_write() -> None:
     doc = st.session_state.get("mc_doc")
+    df = st.session_state.get("mc_items_df")
     payload = {
         "mc_doc": doc,
+        "mc_items": (df.to_dict(orient="records")
+                     if df is not None and not df.empty else None),
         "mc_issuer_name": st.session_state.get("mc_issuer_name"),
         "mc_issuer_title": st.session_state.get("mc_issuer_title"),
         "mc_issuer_phone": st.session_state.get("mc_issuer_phone"),
         "mc_issuer_email": st.session_state.get("mc_issuer_email"),
     }
-    has_any = bool(doc) or any(payload.get(k) for k in payload if k != "mc_doc")
+    has_any = bool(doc) or bool(payload.get("mc_items")) or any(
+        payload.get(k) for k in ("mc_issuer_name", "mc_issuer_title",
+                                  "mc_issuer_phone", "mc_issuer_email")
+    )
     if has_any:
         _write_json_safe(MC_AUTOSAVE_PATH, payload)
     else:
@@ -324,8 +339,11 @@ def _qr_delete_template(path: Path) -> None:
 def _mc_snapshot_payload() -> dict:
     """현재 멤버십 견적서 입력 상태 전체."""
     doc = st.session_state.get("mc_doc")
+    df = st.session_state.get("mc_items_df")
     return {
         "mc_doc": doc,
+        "mc_items": (df.to_dict(orient="records")
+                     if df is not None and not df.empty else None),
         "mc_issuer_name": st.session_state.get("mc_issuer_name"),
         "mc_issuer_title": st.session_state.get("mc_issuer_title"),
         "mc_issuer_phone": st.session_state.get("mc_issuer_phone"),
@@ -336,6 +354,15 @@ def _mc_snapshot_payload() -> dict:
 def _mc_apply_snapshot(payload: dict) -> None:
     if payload.get("mc_doc"):
         st.session_state["mc_doc"] = payload["mc_doc"]
+    if payload.get("mc_items"):
+        try:
+            items = payload["mc_items"]
+            for it in items:
+                if it.get("분류") == "💰 할인":
+                    it["분류"] = "💰 할인행"
+            st.session_state["mc_items_df"] = pd.DataFrame(items)
+        except (ValueError, KeyError):
+            pass
     for k in ("mc_issuer_name", "mc_issuer_title",
               "mc_issuer_phone", "mc_issuer_email"):
         v = payload.get(k)
@@ -2198,6 +2225,262 @@ def _empty_membership_state() -> dict:
 def _ensure_membership_state():
     if "mc_doc" not in st.session_state:
         st.session_state.mc_doc = _empty_membership_state()
+    if "mc_items_df" not in st.session_state:
+        st.session_state.mc_items_df = _mc_empty_items_df()
+
+
+# ── 멤버십 평면 품목 표 — QR 견적서와 동일 패턴 ──
+
+_MC_DEFAULT_SECTIONS = ["멤버십 클라우드", "오더 솔루션"]
+_MC_DEFAULT_CATEGORIES = ["초기구축비", "사용료", "옵션"]
+_MC_DEFAULT_PERIODS = ["", "1회성", "매월", "발생시", "발생월", "1개당"]
+
+MC_ITEM_COLUMNS = [
+    "분류", "구분", "카테고리", "상세 구분", "기간", "단가",
+    "할인율(%)", "할인금액", "비고",
+]
+MC_DISPLAY_COLUMNS = [
+    "분류", "구분", "카테고리", "상세 구분", "기간", "단가",
+    "할인율(%)", "할인금액", "공급가", "비고",
+]
+
+
+def _mc_empty_items_df() -> pd.DataFrame:
+    return pd.DataFrame(columns=MC_ITEM_COLUMNS).astype({
+        "분류": "string", "구분": "string", "카테고리": "string",
+        "상세 구분": "string", "기간": "string",
+        "단가": "Int64", "할인율(%)": "Int64", "할인금액": "Int64",
+        "비고": "string",
+    })
+
+
+def _mc_normal_items_sum(df) -> int:
+    if df is None or df.empty:
+        return 0
+    total = 0
+    for _, row in df.iterrows():
+        if row.get("분류") == ITEM_KIND_DISCOUNT:
+            continue
+        price = row.get("단가")
+        if not (pd.notna(price) and price):
+            continue
+        try:
+            gross = int(price)
+        except (TypeError, ValueError):
+            continue
+        # 항목별 할인 적용 (할인금액 우선)
+        d_amt = row.get("할인금액")
+        d_rate = row.get("할인율(%)")
+        discount = 0
+        if pd.notna(d_amt) and d_amt:
+            try:
+                discount = int(d_amt)
+            except (TypeError, ValueError):
+                pass
+        elif pd.notna(d_rate) and d_rate:
+            try:
+                discount = int(round(gross * float(d_rate) / 100))
+            except (TypeError, ValueError):
+                pass
+        total += gross - discount
+    return total
+
+
+def _mc_row_amount(row, df=None):
+    """멤버십 평면 표 한 행의 공급가 계산. QR _row_amount 와 동일 로직."""
+    if row.get("분류") != ITEM_KIND_DISCOUNT:
+        # 일반 품목
+        price = row.get("단가")
+        if not (pd.notna(price) and price):
+            return None
+        try:
+            gross = int(price)
+        except (TypeError, ValueError):
+            return None
+        d_amt = row.get("할인금액")
+        d_rate = row.get("할인율(%)")
+        discount = 0
+        if pd.notna(d_amt) and d_amt:
+            try:
+                discount = int(d_amt)
+            except (TypeError, ValueError):
+                pass
+        elif pd.notna(d_rate) and d_rate:
+            try:
+                discount = int(round(gross * float(d_rate) / 100))
+            except (TypeError, ValueError):
+                pass
+        return gross - discount
+
+    # 할인 행 — 단가/할인금액 = 고정 차감, 할인율(%) = 일반 품목 합 × 비율
+    deduct = 0
+    price = row.get("단가")
+    if pd.notna(price) and price:
+        try:
+            deduct += abs(int(price))
+        except (TypeError, ValueError):
+            pass
+    d_amt = row.get("할인금액")
+    if pd.notna(d_amt) and d_amt:
+        try:
+            deduct += abs(int(d_amt))
+        except (TypeError, ValueError):
+            pass
+    d_rate = row.get("할인율(%)")
+    if pd.notna(d_rate) and d_rate:
+        try:
+            base = _mc_normal_items_sum(df) if df is not None else 0
+            deduct += int(round(base * float(d_rate) / 100))
+        except (TypeError, ValueError):
+            pass
+    if deduct == 0:
+        return None
+    return -deduct
+
+
+def _mc_add_catalog_row(product: dict):
+    df = st.session_state.mc_items_df
+    new_row = {
+        "분류": ITEM_KIND_NORMAL,
+        "구분": product.get("section", "") or "",
+        "카테고리": product.get("subcategory", "") or "",
+        "상세 구분": product.get("name", "") or "",
+        "기간": product.get("billing_period", "") or "",
+        "단가": (int(product.get("unit_price"))
+                 if product.get("unit_price") not in (None, "") else None),
+        "할인율(%)": None, "할인금액": None,
+        "비고": product.get("notes", "") or "",
+    }
+    # 텍스트 단가/기본금액 텍스트는 비고에 함께 표시
+    extras = []
+    if product.get("unit_price_text"):
+        extras.append(f"단가: {product['unit_price_text']}")
+    if product.get("default_amount_text"):
+        extras.append(f"금액: {product['default_amount_text']}")
+    if extras:
+        new_row["비고"] = " · ".join(extras + ([new_row["비고"]] if new_row["비고"] else []))
+    st.session_state.mc_items_df = pd.concat(
+        [df, pd.DataFrame([new_row])], ignore_index=True,
+    )
+
+
+def _mc_add_blank_row():
+    df = st.session_state.mc_items_df
+    blank = {c: None for c in MC_ITEM_COLUMNS}
+    blank["분류"] = ITEM_KIND_NORMAL
+    st.session_state.mc_items_df = pd.concat(
+        [df, pd.DataFrame([blank])], ignore_index=True,
+    )
+
+
+def _mc_add_discount_row():
+    df = st.session_state.mc_items_df
+    new_row = {
+        "분류": ITEM_KIND_DISCOUNT,
+        "구분": "", "카테고리": "",
+        "상세 구분": "할인",
+        "기간": "1회성",
+        "단가": None,
+        "할인율(%)": None, "할인금액": None,
+        "비고": "협상가",
+    }
+    st.session_state.mc_items_df = pd.concat(
+        [df, pd.DataFrame([new_row])], ignore_index=True,
+    )
+
+
+def _mc_reset_items():
+    st.session_state.mc_items_df = _mc_empty_items_df()
+
+
+def _mc_items_df_to_scenario(df: pd.DataFrame, scenario_name: str = "기본") -> dict:
+    """평면 df → 단일 시나리오 (구분별 섹션 · 카테고리별 카테고리 · 항목들)."""
+    sections: dict[str, dict] = {}
+    section_order: list[str] = []
+    for _, row in df.iterrows():
+        name = (row.get("상세 구분") or "").strip() if isinstance(row.get("상세 구분"), str) else ""
+        if not name:
+            continue
+        is_disc = row.get("분류") == ITEM_KIND_DISCOUNT
+        sec_name = (row.get("구분") or "").strip() if isinstance(row.get("구분"), str) else ""
+        cat_name = (row.get("카테고리") or "").strip() if isinstance(row.get("카테고리"), str) else ""
+        if is_disc:
+            sec_name = sec_name or "할인"
+            cat_name = cat_name or "할인"
+        else:
+            sec_name = sec_name or "기타"
+            cat_name = cat_name or "기타"
+        sec_key = sec_name
+        if sec_key not in sections:
+            sections[sec_key] = {"name": sec_name, "categories_map": {}, "categories_order": []}
+            section_order.append(sec_key)
+        sec = sections[sec_key]
+        if cat_name not in sec["categories_map"]:
+            sec["categories_map"][cat_name] = {"name": cat_name, "items": []}
+            sec["categories_order"].append(cat_name)
+        item: dict = {"name": name}
+        bp = row.get("기간")
+        if isinstance(bp, str) and bp.strip():
+            item["billing_period"] = bp.strip()
+        price = row.get("단가")
+        if pd.notna(price) and price not in ("", None):
+            try:
+                v = float(price)
+                if is_disc:
+                    v = -abs(v)
+                item["unit_price"] = v
+            except (TypeError, ValueError):
+                pass
+        d_rate = row.get("할인율(%)")
+        if pd.notna(d_rate) and d_rate and not is_disc:
+            try:
+                item["discount_rate"] = float(d_rate) / 100
+            except (TypeError, ValueError):
+                pass
+        d_amt = row.get("할인금액")
+        if pd.notna(d_amt) and d_amt and not is_disc:
+            try:
+                item["discount_amount"] = float(d_amt)
+            except (TypeError, ValueError):
+                pass
+        # 할인 행이고 할인율(%) 만 있는 경우: 일반 품목 합의 N% 를 음수 단가로 환산
+        if is_disc and item.get("unit_price") is None:
+            base_sum = _mc_normal_items_sum(df)
+            d_rate_val = row.get("할인율(%)")
+            d_amt_val = row.get("할인금액")
+            deduct = 0.0
+            if pd.notna(d_amt_val) and d_amt_val:
+                deduct += abs(float(d_amt_val))
+            if pd.notna(d_rate_val) and d_rate_val:
+                deduct += base_sum * float(d_rate_val) / 100.0
+            if deduct > 0:
+                item["unit_price"] = -deduct
+        notes = row.get("비고")
+        if isinstance(notes, str) and notes.strip():
+            item["notes"] = notes.strip()
+        sec["categories_map"][cat_name]["items"].append(item)
+
+    out_sections = []
+    for sec_key in section_order:
+        sec = sections[sec_key]
+        cats = []
+        for cat_name in sec["categories_order"]:
+            cat = sec["categories_map"][cat_name]
+            cats.append({
+                "name": cat["name"],
+                "items": cat["items"],
+                "show_subtotal": cat["name"] != "옵션",
+            })
+        out_sections.append({
+            "name": sec["name"],
+            "categories": cats,
+            "show_section_total": True,
+        })
+    return {
+        "name": scenario_name,
+        "sections": out_sections,
+        "show_grand_total": True,
+    }
 
 
 def _mc_items_to_df(items: list[dict]) -> pd.DataFrame:
@@ -2465,78 +2748,215 @@ def render_membership_quote_page():
         label_visibility="collapsed",
     )
 
-    # ─── 3. 품목 내역 (시나리오 탭) ───
+    # ─── 3. 품목 내역 (평면 표 — QR 견적서와 동일 UX) ───
     st.subheader("3. 품목 내역")
     st.caption(
-        "💡 한 견적서 안에 여러 시나리오를 넣어 비교 견적을 제공할 수 있어요. "
-        "예: '앱+POS 연동' 시나리오와 'POS만' 시나리오를 한 문서에 묶어 발행."
+        "💡 카탈로그 선택 또는 '+ 빈 행' 으로 추가. 할인은 **'+ 할인행'** 으로 추가. "
+        "할인 행의 **할인율(%)** 은 일반 품목 합의 N% 만큼 일괄 차감됩니다."
     )
-    scenarios = state.setdefault("scenarios", [])
 
-    sc_btn_add, sc_btn_sample, sc_btn_reset, _ = st.columns([1.2, 1.4, 1.4, 3])
-    with sc_btn_add:
-        if st.button("+ 시나리오 추가", use_container_width=True):
-            scenarios.append({
-                "name": f"시나리오 {len(scenarios) + 1}",
-                "subject": "",
-                "sections": [],
-                "show_grand_total": True,
-            })
+    # 액션 바
+    products_options = list(range(len(products)))
+    pick_col, add_col, blank_col, disc_col, reset_col = st.columns(
+        [5, 1.2, 1.2, 1.2, 1.2]
+    )
+    with pick_col:
+        if products:
+            picked_idx = st.selectbox(
+                "카탈로그에서 추가",
+                options=products_options,
+                index=None,
+                format_func=lambda i: (
+                    f"[{products[i].get('section', '')}/{products[i].get('subcategory', '')}] "
+                    f"{products[i].get('name', '')}"
+                ),
+                placeholder="카탈로그 항목 선택 (검색 가능)...",
+                key="mc_catalog_pick",
+                label_visibility="collapsed",
+            )
+        else:
+            st.info("카탈로그가 비어있습니다. '카탈로그 관리' 페이지에서 추가하세요.")
+            picked_idx = None
+    with add_col:
+        if st.button("+ 추가", use_container_width=True,
+                     disabled=picked_idx is None,
+                     help="선택한 카탈로그 항목을 표에 추가",
+                     key="mc_add_cat"):
+            _mc_add_catalog_row(products[picked_idx])
             st.rerun()
-    with sc_btn_sample:
-        if st.button("📋 (간편)샘플 데이터로 채우기", use_container_width=True,
-                     help="예시 데이터(시나리오 2개)로 폼을 채워봅니다. 현재 입력은 덮어써져요."):
-            st.session_state.mc_doc = _load_membership_sample()
+    with blank_col:
+        if st.button("+ 빈 행", use_container_width=True, key="mc_add_blank"):
+            _mc_add_blank_row()
             st.rerun()
-    with sc_btn_reset:
-        if st.button("🗑 전체 초기화", use_container_width=True,
-                     help="제휴사·회사·시나리오까지 모든 입력을 비웁니다.",
-                     key="mc_reset_request"):
-            st.session_state["_mc_reset_confirm"] = True
+    with disc_col:
+        if st.button("💰 + 할인행", use_container_width=True,
+                     help="단가(고정) 또는 할인율(%)(일괄) 입력 가능",
+                     key="mc_add_disc"):
+            _mc_add_discount_row()
+            st.rerun()
+    with reset_col:
+        if st.button("전체 초기화", use_container_width=True,
+                     key="mc_items_reset_request"):
+            st.session_state["_mc_items_reset_confirm"] = True
 
-    # ── 전체 초기화 확인 다이얼로그 ──
-    if st.session_state.get("_mc_reset_confirm"):
+    # 전체 초기화 확인 다이얼로그
+    if st.session_state.get("_mc_items_reset_confirm"):
         with st.container(border=True):
             st.markdown(
                 "<div style='background:#FDECEA;border-left:4px solid #C0392B;"
                 "padding:10px 14px;border-radius:6px'>"
                 "<strong style='color:#C0392B'>⚠ 전체 초기화 확인</strong><br>"
                 "<span style='font-size:0.9rem'>"
-                "현재 작성 중인 모든 입력(제휴사·회사·시나리오·품목)이 사라집니다. "
+                "현재 작성 중인 모든 입력(제휴사·회사·품목 내역)이 사라집니다. "
                 "정말 초기화할까요?</span></div>",
                 unsafe_allow_html=True,
             )
             cc1, cc2, _ = st.columns([1.2, 1.2, 4])
             with cc1:
                 if st.button("🗑 네, 초기화", type="primary",
-                             use_container_width=True, key="mc_reset_yes"):
+                             use_container_width=True, key="mc_items_reset_yes"):
                     st.session_state.mc_doc = _empty_membership_state()
+                    st.session_state.mc_items_df = _mc_empty_items_df()
                     for k in ("mc_issuer_name", "mc_issuer_title",
                               "mc_issuer_phone", "mc_issuer_email"):
                         if k in st.session_state:
                             del st.session_state[k]
                     _mc_autosave_clear()
-                    st.session_state["_mc_reset_confirm"] = False
+                    st.session_state["_mc_items_reset_confirm"] = False
                     st.rerun()
             with cc2:
                 if st.button("취소", use_container_width=True,
-                             key="mc_reset_no"):
-                    st.session_state["_mc_reset_confirm"] = False
+                             key="mc_items_reset_no"):
+                    st.session_state["_mc_items_reset_confirm"] = False
                     st.rerun()
 
-    if not scenarios:
-        st.info(
-            "아직 시나리오가 없어요. **+ 시나리오 추가** 를 눌러 시작하거나, "
-            "**📋 (간편)샘플 데이터로 채우기** 로 예시 구조를 먼저 확인할 수 있어요."
-        )
+    # 본문 표
+    if st.session_state.mc_items_df.empty:
+        st.info("아직 품목이 없습니다. 카탈로그에서 추가하거나 '+ 빈 행' 을 누르세요.")
+        mc_edited_df = st.session_state.mc_items_df
     else:
-        tab_labels = [(sc.get("name") or f"시나리오 {i+1}") for i, sc in enumerate(scenarios)]
-        tabs = st.tabs(tab_labels)
-        for s_idx, (tab, scenario) in enumerate(zip(tabs, scenarios)):
-            with tab:
-                _render_scenario_editor(s_idx, scenario, products)
+        # 행 순서 변경
+        df_for_order = st.session_state.mc_items_df.reset_index(drop=True)
+        if len(df_for_order) > 1:
+            with st.expander(f"🔃 행 순서 변경 ({len(df_for_order)}건)", expanded=False):
+                move_action = None
+                for i in range(len(df_for_order)):
+                    name = df_for_order.at[i, "상세 구분"] or "(이름 없음)"
+                    price = df_for_order.at[i, "단가"]
+                    lbl = f"**[{i + 1}]** {name}"
+                    if pd.notna(price) and price:
+                        try:
+                            lbl += f"  ·  ₩{int(price):,}"
+                        except (TypeError, ValueError):
+                            pass
+                    with st.container(border=True):
+                        rc = st.columns([0.5, 8, 1, 1])
+                        with rc[0]:
+                            st.markdown(
+                                "<div style='font-size:1.3rem;color:#888;"
+                                "text-align:center;padding-top:2px;'>☰</div>",
+                                unsafe_allow_html=True,
+                            )
+                        with rc[1]:
+                            st.write(lbl)
+                        with rc[2]:
+                            if st.button("⬆", key=f"mc_row_up_{i}",
+                                         disabled=(i == 0),
+                                         use_container_width=True):
+                                move_action = ("up", i)
+                        with rc[3]:
+                            if st.button("⬇", key=f"mc_row_dn_{i}",
+                                         disabled=(i == len(df_for_order) - 1),
+                                         use_container_width=True):
+                                move_action = ("dn", i)
+                if move_action is not None:
+                    direction, idx = move_action
+                    j = idx - 1 if direction == "up" else idx + 1
+                    df = st.session_state.mc_items_df.reset_index(drop=True)
+                    df.iloc[[idx, j]] = df.iloc[[j, idx]].values
+                    st.session_state.mc_items_df = df
+                    st.rerun()
 
-    # ─── 3. Remarks ───
+        display_df = st.session_state.mc_items_df.copy()
+        display_df["분류"] = display_df["분류"].fillna(ITEM_KIND_NORMAL).replace("", ITEM_KIND_NORMAL)
+        display_df["공급가"] = display_df.apply(
+            lambda r: _mc_row_amount(r, df=display_df), axis=1
+        ).astype("Int64")
+        display_df = display_df[MC_DISPLAY_COLUMNS]
+
+        mc_edited_df = st.data_editor(
+            display_df,
+            column_config={
+                "분류": st.column_config.SelectboxColumn(
+                    "분류", options=ITEM_KINDS, required=True, width="small",
+                ),
+                "구분": st.column_config.SelectboxColumn(
+                    "구분", options=[""] + _MC_DEFAULT_SECTIONS + ["기타"],
+                    width="small",
+                ),
+                "카테고리": st.column_config.SelectboxColumn(
+                    "카테고리", options=[""] + _MC_DEFAULT_CATEGORIES + ["기타"],
+                    width="small",
+                ),
+                "상세 구분": st.column_config.TextColumn("상세 구분", required=True, width="medium"),
+                "기간": st.column_config.SelectboxColumn(
+                    "기간", options=_MC_DEFAULT_PERIODS, width="small",
+                ),
+                "단가": st.column_config.NumberColumn(
+                    "단가", step=100000, format="₩%,d", width="small",
+                    help="단가(양수). '💰 할인행' 분류는 자동 차감.",
+                ),
+                "할인율(%)": st.column_config.NumberColumn(
+                    "할인율(%)", min_value=0, max_value=100, step=1, format="%d%%",
+                    width="small",
+                ),
+                "할인금액": st.column_config.NumberColumn(
+                    "할인금액", min_value=0, step=1000, format="₩%,d", width="small",
+                ),
+                "공급가": st.column_config.NumberColumn(
+                    "공급가", disabled=True, format="₩%,d", width="small",
+                    help="단가 − 항목별 할인 (할인행은 일괄 차감)",
+                ),
+                "비고": st.column_config.TextColumn("비고", width="medium"),
+            },
+            num_rows="dynamic",
+            use_container_width=True,
+            hide_index=True,
+            key="mc_items_editor",
+        )
+        edited_core = mc_edited_df[MC_ITEM_COLUMNS]
+        old = st.session_state.mc_items_df.reset_index(drop=True)
+        new = edited_core.reset_index(drop=True)
+        changed = (
+            len(old) != len(new) or
+            not all((old[c].astype(object).fillna("__").tolist()
+                     == new[c].astype(object).fillna("__").tolist())
+                    for c in MC_ITEM_COLUMNS)
+        )
+        st.session_state.mc_items_df = edited_core
+        if changed:
+            st.rerun()
+
+    # 합계
+    if not (isinstance(mc_edited_df, pd.DataFrame) and mc_edited_df.empty):
+        amounts = mc_edited_df.apply(
+            lambda r: _mc_row_amount(r, df=mc_edited_df), axis=1
+        )
+        subtotal = int(pd.to_numeric(amounts, errors="coerce").fillna(0).sum())
+        try:
+            vat_rate = load_labels(PROJECT_ROOT).quote.vat_rate
+        except Exception:  # noqa: BLE001
+            vat_rate = 0.10
+        vat = int(round(subtotal * vat_rate))
+        total = subtotal + vat
+        st.divider()
+        st.caption("📊 **공급가액 · 부가세 · 합계 금액**")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("공급가액", f"₩{subtotal:,}")
+        m2.metric(f"부가세 ({int(vat_rate * 100)}%)", f"₩{vat:,}")
+        m3.metric("합계 금액", f"₩{total:,}")
+
+    # ─── 4. 기타 안내 ───
     st.subheader("4. 기타 안내")
     remarks = state.setdefault("remarks", [])
     remarks_text = st.text_area(
@@ -2548,11 +2968,17 @@ def render_membership_quote_page():
     )
     state["remarks"] = [ln.strip() for ln in remarks_text.splitlines() if ln.strip()]
 
-    # ─── 4. 생성 / 미리보기 ───
+    # 평면 표 → 시나리오 1개로 변환하여 state 에 반영
+    state["scenarios"] = [_mc_items_df_to_scenario(
+        st.session_state.mc_items_df,
+        scenario_name=(state.get("title") or "").strip() or "기본"
+    )]
+
+    # ─── 5. 생성 / 미리보기 ───
     st.divider()
-    can_generate = bool(cp.get("name")) and bool(scenarios)
+    can_generate = bool(cp.get("name")) and not st.session_state.mc_items_df.empty
     if not can_generate:
-        st.info("제휴사 회사명과 시나리오 최소 1개를 입력해주세요.")
+        st.info("제휴사 회사명과 품목 최소 1건을 입력해주세요.")
 
     issuer_contact = dict(
         name=issuer_name.strip(),
