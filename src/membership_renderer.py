@@ -123,9 +123,10 @@ def _render_logo(doc, brand: Brand, project_root: Path) -> None:
         return
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p.paragraph_format.space_after = Pt(2)
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after = Pt(0)
     run = p.add_run()
-    run.add_picture(str(logo_path), width=Cm(3.0))
+    run.add_picture(str(logo_path), width=Cm(2.4))
 
 
 def _render_title(doc, document: MembershipQuoteDocument,
@@ -135,16 +136,16 @@ def _render_title(doc, document: MembershipQuoteDocument,
     suffix = f" ({scenario.name})" if scenario.name else ""
     _add_paragraph(
         doc, f"{document.title}{suffix}",
-        font=font, size_pt=18, bold=True,
+        font=font, size_pt=15, bold=True,
         alignment=WD_ALIGN_PARAGRAPH.CENTER,
-        color=primary, space_after_pt=4,
+        color=primary, space_after_pt=1,
     )
     if scenario.subject:
         _add_paragraph(
             doc, scenario.subject,
-            font=font, size_pt=10.5, bold=True,
+            font=font, size_pt=8.5,
             alignment=WD_ALIGN_PARAGRAPH.CENTER,
-            space_after_pt=12,
+            space_after_pt=6,
         )
 
 
@@ -180,9 +181,9 @@ def _render_parties(doc, document: MembershipQuoteDocument, brand: Brand) -> Non
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(0)
         r = p.add_run(party.label)
-        _apply_font(r, font, size_pt=10, bold=True,
+        _apply_font(r, font, size_pt=8.5, bold=True,
                     color=RGBColor(0xFF, 0xFF, 0xFF))
-    table.rows[0].height = Cm(0.7)
+    table.rows[0].height = Cm(0.45)
     table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
 
     # 정보
@@ -191,10 +192,10 @@ def _render_parties(doc, document: MembershipQuoteDocument, brand: Brand) -> Non
         _vcenter(c)
         # 첫 줄: 회사명 (굵게)
         first = c.paragraphs[0]
-        first.paragraph_format.space_before = Pt(2)
-        first.paragraph_format.space_after = Pt(2)
+        first.paragraph_format.space_before = Pt(0)
+        first.paragraph_format.space_after = Pt(0)
         fr = first.add_run(party.name)
-        _apply_font(fr, font, size_pt=11, bold=True)
+        _apply_font(fr, font, size_pt=9, bold=True)
         # 보조 정보
         info_lines = []
         if party.address:
@@ -208,13 +209,13 @@ def _render_parties(doc, document: MembershipQuoteDocument, brand: Brand) -> Non
             p.paragraph_format.space_before = Pt(0)
             p.paragraph_format.space_after = Pt(0)
             r = p.add_run(line)
-            _apply_font(r, font, size_pt=8.5)
+            _apply_font(r, font, size_pt=7.5)
 
 
 def _render_table_header_row(table, row_idx: int, headers: list[str], widths: list[Cm],
                              font: str, primary_hex: str) -> None:
     row = table.rows[row_idx]
-    row.height = Cm(0.8)
+    row.height = Cm(0.5)
     row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
     for c_idx, (h, w) in enumerate(zip(headers, widths)):
         c = row.cells[c_idx]
@@ -226,7 +227,7 @@ def _render_table_header_row(table, row_idx: int, headers: list[str], widths: li
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(0)
         r = p.add_run(h)
-        _apply_font(r, font, size_pt=9, bold=True, color=RGBColor(0xFF, 0xFF, 0xFF))
+        _apply_font(r, font, size_pt=8, bold=True, color=RGBColor(0xFF, 0xFF, 0xFF))
 
 
 def _fill_cell(cell, text: str, *, font: str, size_pt: float = 9,
@@ -340,7 +341,8 @@ def _render_section_table(doc, section: MembershipSection, brand: Brand) -> None
     _set_table_borders(table, color="BFBFBF", size=4)
 
     headers = ["구분", "분류", "상세 구분", "기간", "단가", "할인율", "금액", "비고"]
-    widths = [Cm(2.0), Cm(1.6), Cm(4.5), Cm(1.4), Cm(2.8), Cm(1.2), Cm(2.6), Cm(1.5)]
+    # 18.8cm 가용 폭에 분배 — 상세구분(종량제 6줄) 넓게, 할인율·비고 좁게
+    widths = [Cm(1.8), Cm(1.4), Cm(5.6), Cm(1.3), Cm(2.6), Cm(1.0), Cm(2.6), Cm(1.5)]
     _render_table_header_row(table, 0, headers, widths, font, primary_hex)
 
     # 본문 채우기
@@ -360,62 +362,61 @@ def _render_section_table(doc, section: MembershipSection, brand: Brand) -> None
 
         # 분류 컬럼 텍스트 (병합 후의 첫 행 = cat_first_row)
         _fill_cell(table.cell(cat_first_row, 1), cat.name,
-                   font=font, size_pt=9, bold=True,
+                   font=font, size_pt=8, bold=True,
                    align=WD_ALIGN_PARAGRAPH.CENTER, bg=light_bg)
         # 분류 컬럼 수직 병합 (옵션 분류는 합계 행 없을 수 있음)
         cat_last_row = r - 1  # 마지막 항목 row
         if cat_first_row != cat_last_row:
             _merge_vertical(table, 1, cat_first_row, cat_last_row)
 
-        # 분류 합계 행
+        # 분류 합계 행 (col 2~5 병합으로 라벨 넓게, col 6 금액, col 7 비고)
         if cat.show_subtotal:
             subtotal = category_subtotal(cat)
             label = cat.subtotal_label or f"{cat.name} 합계"
-            # 컬럼 0,1: 빈 (구분 병합에 포함됨), 컬럼 2: 합계 라벨, 컬럼 6: 금액, 나머지: 빈
+            subtotal_row = table.rows[r]
+            subtotal_row.height = Cm(0.45)
+            subtotal_row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
             _fill_cell(table.cell(r, 0), "", font=font)
             _fill_cell(table.cell(r, 1), "", font=font)
-            _fill_cell(table.cell(r, 2), label, font=font, size_pt=9, bold=True,
+            label_cell = table.cell(r, 2).merge(table.cell(r, 5))
+            _fill_cell(label_cell, label, font=font, size_pt=8, bold=True,
                        align=WD_ALIGN_PARAGRAPH.RIGHT, bg=light_bg)
-            for c in (3, 4, 5):
-                _fill_cell(table.cell(r, c), "", font=font, bg=light_bg)
             _fill_cell(table.cell(r, 6),
                        f"₩{_format_won(subtotal)}" if subtotal else "-",
-                       font=font, size_pt=10, bold=True,
+                       font=font, size_pt=8.5, bold=True,
                        align=WD_ALIGN_PARAGRAPH.RIGHT, bg=light_bg)
-            _fill_cell(table.cell(r, 7), "-", font=font, size_pt=9,
+            _fill_cell(table.cell(r, 7), "-", font=font, size_pt=8,
                        align=WD_ALIGN_PARAGRAPH.CENTER, bg=light_bg)
-            # 합계 행: 분류 컬럼은 빈 칸 (병합 안 함)
             r += 1
 
     # 구분 컬럼 텍스트 + 수직 병합 (섹션 합계 행 직전까지)
     _fill_cell(table.cell(section_first_row, 0), section.name,
-               font=font, size_pt=10, bold=True,
+               font=font, size_pt=8.5, bold=True,
                align=WD_ALIGN_PARAGRAPH.CENTER, bg=light_bg)
     section_body_last = r - 1
     if section_first_row != section_body_last:
         _merge_vertical(table, 0, section_first_row, section_body_last)
 
-    # 섹션 예상 총 금액 행
+    # 섹션 예상 총 금액 행 (col 2~7 가로 병합으로 한 줄에 표시)
     if section.show_section_total:
         by_period = section_subtotals_by_period(section)
-        # 텍스트 구성: 기간별 합계를 줄바꿈으로
-        lines = []
-        for period, amt in by_period.items():
-            lines.append(f"- {period}: ₩{_format_won(amt)}")
-        total_text = "\n".join(lines) if lines else "-"
+        parts = [f"{period}: ₩{_format_won(amt)}" for period, amt in by_period.items()]
+        total_text = "  /  ".join(parts) if parts else "-"
 
+        section_total_row = table.rows[r]
+        section_total_row.height = Cm(0.5)
+        section_total_row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
         _fill_cell(table.cell(r, 0), "", font=font, bg=light_bg)
         _fill_cell(table.cell(r, 1), "예상 총 금액",
-                   font=font, size_pt=10, bold=True,
+                   font=font, size_pt=8, bold=True,
                    align=WD_ALIGN_PARAGRAPH.CENTER,
                    bg=brand.branding.colors.primary.lstrip("#"),
                    color=RGBColor(0xFF, 0xFF, 0xFF))
-        # 분류 컬럼은 위 병합에서 제외되어 별도 셀, 라벨 표시
-        _fill_cell(table.cell(r, 2), total_text,
-                   font=font, size_pt=10, bold=True,
+        # col 2~7 가로 병합해서 넓은 한 셀로
+        merged_cell = table.cell(r, 2).merge(table.cell(r, 7))
+        _fill_cell(merged_cell, total_text,
+                   font=font, size_pt=9, bold=True,
                    align=WD_ALIGN_PARAGRAPH.LEFT, bg=light_bg)
-        for c in (3, 4, 5, 6, 7):
-            _fill_cell(table.cell(r, c), "", font=font, bg=light_bg)
         r += 1
 
 
@@ -423,27 +424,44 @@ def _render_item_row_in_table(table, row_idx: int, item: MembershipLineItem,
                               widths: list[Cm], font: str) -> None:
     """8컬럼 표에서 상세구분 시작 컬럼(idx=2)부터 채움."""
     row = table.rows[row_idx]
-    row.height = Cm(0.9)
+    row.height = Cm(0.45)
     row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
 
-    # 컬럼 2: 상세 구분 (이름 + 보조 + 종량제 하위)
-    name_text = item.name
+    # 컬럼 2: 상세 구분 (이름 + 보조 + 종량제 하위) — sub_items 만 더 작은 폰트로
+    name_cell = table.cell(row_idx, 2)
+    _vcenter(name_cell)
+    name_p = name_cell.paragraphs[0]
+    name_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    name_p.paragraph_format.space_before = Pt(0)
+    name_p.paragraph_format.space_after = Pt(0)
+    nr = name_p.add_run(item.name)
+    _apply_font(nr, font, size_pt=7.5)
     if item.name_detail:
-        name_text += "\n" + item.name_detail
+        for ln in item.name_detail.split("\n"):
+            p_detail = name_cell.add_paragraph()
+            p_detail.paragraph_format.space_before = Pt(0)
+            p_detail.paragraph_format.space_after = Pt(0)
+            r_detail = p_detail.add_run(ln)
+            _apply_font(r_detail, font, size_pt=7.5)
     if item.sub_items:
         sub_lines = []
         for s in item.sub_items:
             if s.label:
                 sub_lines.append(f"· {s.label}  {s.spec}")
+            elif sub_lines:
+                sub_lines[-1] += f"  {s.spec}"
             else:
                 sub_lines.append(f"   {s.spec}")
-        name_text += "\n" + "\n".join(sub_lines)
-    _fill_cell(table.cell(row_idx, 2), name_text, font=font, size_pt=8.5,
-               align=WD_ALIGN_PARAGRAPH.LEFT)
+        for ln in sub_lines:
+            p_sub = name_cell.add_paragraph()
+            p_sub.paragraph_format.space_before = Pt(0)
+            p_sub.paragraph_format.space_after = Pt(0)
+            r_sub = p_sub.add_run(ln)
+            _apply_font(r_sub, font, size_pt=6.5)
 
     # 컬럼 3: 기간
     _fill_cell(table.cell(row_idx, 3), item.billing_period or "-",
-               font=font, size_pt=8.5, align=WD_ALIGN_PARAGRAPH.CENTER)
+               font=font, size_pt=7.5, align=WD_ALIGN_PARAGRAPH.CENTER)
 
     # 컬럼 4: 단가
     if item.unit_price is not None:
@@ -456,12 +474,12 @@ def _render_item_row_in_table(table, row_idx: int, item: MembershipLineItem,
         up_text = "-"
         up_align = WD_ALIGN_PARAGRAPH.CENTER
     _fill_cell(table.cell(row_idx, 4), up_text,
-               font=font, size_pt=8.5, align=up_align)
+               font=font, size_pt=7.5, align=up_align)
 
     # 컬럼 5: 할인율
     dr_text = f"{int(item.discount_rate * 100)}%" if item.discount_rate else "-"
     _fill_cell(table.cell(row_idx, 5), dr_text,
-               font=font, size_pt=8.5, align=WD_ALIGN_PARAGRAPH.CENTER)
+               font=font, size_pt=7.5, align=WD_ALIGN_PARAGRAPH.CENTER)
 
     # 컬럼 6: 금액
     eff = item.effective_amount()
@@ -472,28 +490,22 @@ def _render_item_row_in_table(table, row_idx: int, item: MembershipLineItem,
     else:
         amt_text = "-"
     _fill_cell(table.cell(row_idx, 6), amt_text,
-               font=font, size_pt=9, bold=True,
+               font=font, size_pt=8, bold=True,
                align=WD_ALIGN_PARAGRAPH.RIGHT)
 
     # 컬럼 7: 비고
     _fill_cell(table.cell(row_idx, 7), item.notes or "-",
-               font=font, size_pt=8.5, align=WD_ALIGN_PARAGRAPH.LEFT)
+               font=font, size_pt=7.5, align=WD_ALIGN_PARAGRAPH.LEFT)
 
 
 def _render_unit_notice(doc, document: MembershipQuoteDocument, brand: Brand) -> None:
     font = brand.branding.font_family
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    p.paragraph_format.space_before = Pt(8)
-    p.paragraph_format.space_after = Pt(2)
-    r = p.add_run("아래와 같이 견적하오니 참조하시기 바랍니다.")
-    _apply_font(r, font, size_pt=9)
-    # 두번째 줄: 단위 안내
-    p2 = doc.add_paragraph()
-    p2.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    p2.paragraph_format.space_after = Pt(4)
-    r2 = p2.add_run(document.unit_notice)
-    _apply_font(r2, font, size_pt=9, color=RGBColor(0x77, 0x77, 0x77))
+    p.paragraph_format.space_before = Pt(4)
+    p.paragraph_format.space_after = Pt(0)
+    r = p.add_run(f"아래와 같이 견적하오니 참조하시기 바랍니다.    {document.unit_notice}")
+    _apply_font(r, font, size_pt=7.5, color=RGBColor(0x77, 0x77, 0x77))
 
 
 def _render_grand_total(doc, scenario: MembershipScenario, brand: Brand) -> None:
@@ -503,47 +515,54 @@ def _render_grand_total(doc, scenario: MembershipScenario, brand: Brand) -> None
     by_period = scenario_grand_total_by_period(scenario)
     if not by_period:
         return
-    lines = ["[전체 서비스 이용 금액]"]
-    for period, amt in by_period.items():
-        lines.append(f"- {period}: ₩{_format_won(amt)}")
-    text = "\n".join(lines)
+    parts = [f"{period}: ₩{_format_won(amt)}" for period, amt in by_period.items()]
+    inline = "  /  ".join(parts)
 
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    p.paragraph_format.space_before = Pt(8)
-    p.paragraph_format.space_after = Pt(4)
-    for i, ln in enumerate(text.split("\n")):
-        if i > 0:
-            p.add_run().add_break()
-        r = p.add_run(ln)
-        _apply_font(r, font, size_pt=11, bold=(i == 0), color=primary if i == 0 else None)
+    p.paragraph_format.space_before = Pt(4)
+    p.paragraph_format.space_after = Pt(0)
+    r1 = p.add_run("[전체 서비스 이용 금액]  ")
+    _apply_font(r1, font, size_pt=9, bold=True, color=primary)
+    r2 = p.add_run(inline)
+    _apply_font(r2, font, size_pt=9, bold=True)
 
 
 def _render_remarks(doc, document: MembershipQuoteDocument, brand: Brand) -> None:
     if not document.remarks:
         return
     font = brand.branding.font_family
-    _add_paragraph(doc, "※ Remarks", font=font, size_pt=10, bold=True,
-                   space_before_pt=12, space_after_pt=2)
+    _add_paragraph(doc, "※ Remarks", font=font, size_pt=8, bold=True,
+                   space_before_pt=4, space_after_pt=0)
     for i, line in enumerate(document.remarks, start=1):
         p = doc.add_paragraph()
-        p.paragraph_format.space_after = Pt(1)
-        p.paragraph_format.left_indent = Cm(0.3)
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after = Pt(0)
+        p.paragraph_format.left_indent = Cm(0.2)
         r = p.add_run(f"{i}. {line}")
-        _apply_font(r, font, size_pt=9)
+        _apply_font(r, font, size_pt=7.5)
 
 
 def _render_date(doc, document: MembershipQuoteDocument, brand: Brand) -> None:
     font = brand.branding.font_family
     _add_paragraph(doc, document.issued_date.strftime("%Y년 %m월 %d일"),
-                   font=font, size_pt=10.5,
+                   font=font, size_pt=9,
                    alignment=WD_ALIGN_PARAGRAPH.CENTER,
-                   space_before_pt=14, space_after_pt=4)
+                   space_before_pt=4, space_after_pt=2)
 
 
 def _add_page_break(doc) -> None:
     p = doc.add_paragraph()
     p.add_run().add_break(WD_BREAK.PAGE)
+
+
+def _add_tiny_spacer(doc) -> None:
+    """섹션 사이 아주 작은 간격 (2pt)."""
+    p = doc.add_paragraph()
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after = Pt(0)
+    r = p.add_run("")
+    r.font.size = Pt(2)
 
 
 # ─── 메인 진입점 ───────────────────────────────────────────
@@ -552,10 +571,10 @@ def render_membership_docx(brand: Brand, document: MembershipQuoteDocument,
                            project_root: Path, output_path: Path) -> Path:
     doc = Document()
     for section in doc.sections:
-        section.top_margin = Cm(1.2)
-        section.bottom_margin = Cm(1.2)
-        section.left_margin = Cm(1.4)
-        section.right_margin = Cm(1.4)
+        section.top_margin = Cm(0.9)
+        section.bottom_margin = Cm(0.9)
+        section.left_margin = Cm(1.1)
+        section.right_margin = Cm(1.1)
 
     for s_idx, scenario in enumerate(document.scenarios):
         if s_idx > 0:
@@ -564,9 +583,11 @@ def render_membership_docx(brand: Brand, document: MembershipQuoteDocument,
         _render_title(doc, document, scenario, brand)
         _render_parties(doc, document, brand)
         _render_unit_notice(doc, document, brand)
-        for sec in scenario.sections:
+        for sec_i, sec in enumerate(scenario.sections):
             _render_section_table(doc, sec, brand)
-            doc.add_paragraph()
+            # 마지막 섹션 뒤엔 빈 줄 생략 (공간 절약)
+            if sec_i < len(scenario.sections) - 1:
+                _add_tiny_spacer(doc)
         if scenario.show_grand_total:
             _render_grand_total(doc, scenario, brand)
         _render_date(doc, document, brand)
