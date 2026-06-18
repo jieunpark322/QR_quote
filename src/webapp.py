@@ -954,9 +954,9 @@ def _render_qr_catalog_editor():
                 df[col] = default
 
     st.caption(
-        "💡 설명/청구기준 칸은 표 안에선 한 줄로 보일 수 있어요. "
-        "Alt+Enter(또는 \\n) 로 줄바꿈을 넣으면, 표 아래 **줄바꿈 미리보기** 와 "
-        "견적서 PDF 양쪽 모두에 줄바꿈 그대로 반영됩니다."
+        "💡 설명/청구기준은 셀 안에서 Alt+Enter로 줄바꿈 입력 가능합니다. "
+        "행 높이를 크게 잡아 여러 줄이 보이게 표시하며, 견적서 PDF에도 "
+        "줄바꿈이 그대로 반영됩니다."
     )
 
     edited = st.data_editor(
@@ -964,44 +964,33 @@ def _render_qr_catalog_editor():
         column_config={
             "code": st.column_config.TextColumn(
                 "코드", help="고유 식별자 (영문/숫자/하이픈)", required=True,
+                width="small",
             ),
             "name": st.column_config.TextColumn(
                 "품목명", help="견적서에 표시되는 이름", required=True,
+                width="medium",
             ),
             "description": st.column_config.TextColumn(
                 "설명/청구기준",
-                help=("예: '매장 / 월', '매장 월 정액제'. "
-                      "여러 줄로 입력하면 PDF에도 줄바꿈이 그대로 반영됩니다."),
+                help=("Alt+Enter 로 줄바꿈 입력. "
+                      "여러 줄 입력하면 표·PDF 모두 줄바꿈 그대로 반영됩니다."),
+                width="large",
             ),
             "unit_price": st.column_config.NumberColumn(
                 "단가 (원)", min_value=0, step=1000, format="₩%,d",
+                width="small",
             ),
             "currency": st.column_config.SelectboxColumn(
                 "통화", options=["KRW", "USD", "EUR", "JPY"],
+                width="small",
             ),
         },
         num_rows="dynamic",
         use_container_width=True,
         hide_index=True,
+        row_height=100,
         key="catalog_editor_qr",
     )
-
-    # 줄바꿈 미리보기 — 표에서 한 줄로 보이는 description 을 실제 모습 그대로 표시
-    multiline_rows = [
-        r for _, r in edited.iterrows()
-        if isinstance(r.get("description"), str) and "\n" in (r.get("description") or "")
-    ]
-    if multiline_rows:
-        with st.expander(f"📄 설명 줄바꿈 미리보기 · {len(multiline_rows)}건",
-                         expanded=True):
-            for r in multiline_rows:
-                name = (r.get("name") or "").strip() or (r.get("code") or "")
-                price = r.get("unit_price")
-                price_txt = (f" · ₩{int(price):,}"
-                             if price not in (None, "") and pd.notna(price) else "")
-                st.markdown(f"**{name}**{price_txt}")
-                st.text(r.get("description") or "")
-                st.divider()
 
     st.divider()
     col_save, col_info = st.columns([1, 3])
@@ -1108,30 +1097,17 @@ def _render_membership_catalog_editor():
                 "기본 금액 텍스트",
                 help="비우면 자동 계산. '후청구', '협의 금액', '무상제공' 등 텍스트 입력 가능",
             ),
-            "notes": st.column_config.TextColumn("비고"),
+            "notes": st.column_config.TextColumn(
+                "비고", width="large",
+                help="Alt+Enter 로 줄바꿈 입력 가능. PDF에도 줄바꿈 반영.",
+            ),
         },
         num_rows="dynamic",
         use_container_width=True,
         hide_index=True,
+        row_height=100,
         key="catalog_editor_mc",
     )
-
-    # 줄바꿈 미리보기 — '비고' 에 여러 줄 입력한 항목은 실제 모습 그대로 표시
-    ml_rows = [
-        r for _, r in edited.iterrows()
-        if isinstance(r.get("notes"), str) and "\n" in (r.get("notes") or "")
-    ]
-    if ml_rows:
-        with st.expander(f"📄 비고 줄바꿈 미리보기 · {len(ml_rows)}건",
-                         expanded=True):
-            for r in ml_rows:
-                name = (r.get("name") or "").strip() or (r.get("code") or "")
-                price = r.get("unit_price")
-                price_txt = (f" · ₩{int(price):,}"
-                             if price not in (None, "") and pd.notna(price) else "")
-                st.markdown(f"**{name}**{price_txt}")
-                st.text(r.get("notes") or "")
-                st.divider()
 
     st.divider()
     col_save, col_info = st.columns([1, 3])
