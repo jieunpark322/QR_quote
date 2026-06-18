@@ -759,7 +759,7 @@ def render_quote_page():
                 )
                 try:
                     from streamlit_sortables import sort_items
-                    labels = [
+                    row_labels = [
                         f"☰  [{i + 1}]  {df_for_order.at[i, '항목'] or '(이름 없음)'}"
                         + (f"  ·  ₩{int(df_for_order.at[i, '단가']):,}"
                            if pd.notna(df_for_order.at[i, '단가'])
@@ -767,10 +767,10 @@ def render_quote_page():
                         for i in range(len(df_for_order))
                     ]
                     sorted_labels = sort_items(
-                        labels, direction="vertical",
+                        row_labels, direction="vertical",
                         key="items_sort_dnd",
                     )
-                    if sorted_labels and sorted_labels != labels:
+                    if sorted_labels and sorted_labels != row_labels:
                         # 라벨에서 원래 인덱스 추출 ("☰  [3]  ..." → 3)
                         try:
                             new_order = [
