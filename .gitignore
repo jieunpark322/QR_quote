@@ -7,3 +7,4 @@ _test_*.py
 _ci_extract/
 .DS_Store
 ~$*.xlsx
+out/
