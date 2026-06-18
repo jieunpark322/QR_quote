@@ -113,6 +113,120 @@ def _format_won(amount: float) -> str:
     return f"{int(round(amount)):,}"
 
 
+def _compute_section_widths(section: MembershipSection,
+                            usable_cm: float = 18.8) -> list:
+    """콘텐츠 길이 + 중요도 기반으로 컬럼 너비를 유동 산출.
+
+    [구분, 분류, 상세 구분, 기간, 단가, 할인율, 금액, 비고]
+    """
+    cats = section.categories
+    items = [it for cat in cats for it in cat.items]
+
+    # 각 컬럼의 최대 콘텐츠 글자 수 (한 줄 기준, 가장 긴 줄)
+    def _max_line_len(strings):
+        m = 0
+        for s in strings:
+            if not s:
+                continue
+            for ln in str(s).split("\n"):
+                m = max(m, len(ln))
+        return m
+
+    # 헤더는 기본 한국어 2~3자 (구분, 분류, 기간 등)
+    sec_len = _max_line_len([section.name, "구분"])
+    cat_len = _max_line_len([c.name for c in cats] + ["분류"])
+
+    # 상세 구분: name + name_detail + sub_items 줄들 최대치
+    detail_strings = []
+    for it in items:
+        detail_strings.append(it.name)
+        if it.name_detail:
+            detail_strings.append(it.name_detail)
+        if it.sub_items:
+            # 종량제 줄 합치기 패턴 그대로
+            sub_lines = []
+            for s in it.sub_items:
+                if s.label:
+                    sub_lines.append(f"· {s.label}  {s.spec}")
+                elif sub_lines:
+                    sub_lines[-1] += f"  {s.spec}"
+                else:
+                    sub_lines.append(f"   {s.spec}")
+            detail_strings.extend(sub_lines)
+    detail_len = max(_max_line_len(detail_strings + ["상세 구분"]), 8)
+
+    period_len = _max_line_len([it.billing_period for it in items] + ["기간"])
+
+    unit_price_strings = []
+    for it in items:
+        if it.unit_price is not None:
+            unit_price_strings.append(f"₩{int(it.unit_price):,}")
+        elif it.unit_price_text:
+            unit_price_strings.append(it.unit_price_text)
+    unit_price_len = _max_line_len(unit_price_strings + ["단가"])
+
+    has_discount = any(it.discount_rate for it in items)
+
+    amount_strings = []
+    for it in items:
+        if it.amount_text:
+            amount_strings.append(it.amount_text)
+        elif it.effective_amount() is not None:
+            amount_strings.append(f"₩{int(it.effective_amount()):,}")
+        else:
+            amount_strings.append("-")
+    # 분류 합계도 금액 컬럼에 표시
+    for cat in cats:
+        st = category_subtotal(cat)
+        if st:
+            amount_strings.append(f"₩{int(st):,}")
+    amount_len = _max_line_len(amount_strings + ["금액"])
+
+    notes_len = _max_line_len([it.notes or "" for it in items] + ["비고"])
+
+    # 글자수 → cm 환산 (작은 폰트라 한 글자 ~0.15cm 가정)
+    CHAR_CM = 0.16
+    raw = [
+        sec_len * CHAR_CM,
+        cat_len * CHAR_CM,
+        detail_len * CHAR_CM,
+        period_len * CHAR_CM,
+        unit_price_len * CHAR_CM,
+        2 * CHAR_CM,  # 할인율 ("40%" 또는 "-")
+        amount_len * CHAR_CM,
+        notes_len * CHAR_CM,
+    ]
+
+    # 최소·최대 제약
+    min_widths = [1.4, 1.0, 3.5, 0.9, 1.5, 0.7, 1.5, 1.0]
+    max_widths = [3.0, 2.2, 7.5, 1.8, 4.0, 1.0, 3.5, 3.0]
+    if not has_discount:
+        max_widths[5] = 0.8  # 할인율 모두 없으면 더 좁게
+
+    constrained = [
+        min(max(raw_w, min_widths[i]), max_widths[i])
+        for i, raw_w in enumerate(raw)
+    ]
+
+    # 합계가 사용 가능한 폭을 넘으면 비율 스케일다운
+    total = sum(constrained)
+    if total > usable_cm:
+        scale = usable_cm / total
+        constrained = [w * scale for w in constrained]
+    else:
+        # 남는 공간은 콘텐츠 폭이 큰 컬럼(상세구분, 단가, 금액)에 가중 분배
+        slack = usable_cm - total
+        slack_weights = [0.3, 0.2, 2.0, 0.2, 1.0, 0.0, 0.8, 0.5]
+        sw_sum = sum(slack_weights)
+        if sw_sum > 0:
+            constrained = [
+                w + slack * sw / sw_sum
+                for w, sw in zip(constrained, slack_weights)
+            ]
+
+    return [Cm(round(w, 2)) for w in constrained]
+
+
 # ─── 렌더링 함수들 ────────────────────────────────────────
 
 def _render_logo(doc, brand: Brand, project_root: Path) -> None:
@@ -341,8 +455,8 @@ def _render_section_table(doc, section: MembershipSection, brand: Brand) -> None
     _set_table_borders(table, color="BFBFBF", size=4)
 
     headers = ["구분", "분류", "상세 구분", "기간", "단가", "할인율", "금액", "비고"]
-    # 18.8cm 가용 폭에 분배 — 상세구분(종량제 6줄) 넓게, 할인율·비고 좁게
-    widths = [Cm(1.8), Cm(1.4), Cm(5.6), Cm(1.3), Cm(2.6), Cm(1.0), Cm(2.6), Cm(1.5)]
+    # 콘텐츠 길이 + 중요도 기반 유동 컬럼 너비
+    widths = _compute_section_widths(section)
     _render_table_header_row(table, 0, headers, widths, font, primary_hex)
 
     # 본문 채우기
@@ -532,7 +646,7 @@ def _render_remarks(doc, document: MembershipQuoteDocument, brand: Brand) -> Non
     if not document.remarks:
         return
     font = brand.branding.font_family
-    _add_paragraph(doc, "※ Remarks", font=font, size_pt=8, bold=True,
+    _add_paragraph(doc, "※ 기타 안내", font=font, size_pt=8, bold=True,
                    space_before_pt=4, space_after_pt=0)
     for i, line in enumerate(document.remarks, start=1):
         p = doc.add_paragraph()

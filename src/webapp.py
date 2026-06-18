@@ -1124,7 +1124,8 @@ def _load_membership_sample() -> dict:
 
 
 def _empty_membership_state() -> dict:
-    """빈 초기 상태 — QR 견적서와 동일하게 placeholder만 보이는 상태로 시작."""
+    """빈 초기 상태 — QR 견적서와 동일하게 placeholder만 보이는 상태로 시작.
+    supplier(회사 정보)는 brand.json에서 자동 로드되므로 None."""
     return {
         "document_id": "",
         "title": "멤버십 클라우드 견적서",
@@ -1133,10 +1134,7 @@ def _empty_membership_state() -> dict:
             "label": "제휴사", "name": "",
             "address": None, "ceo": None, "contact": None,
         },
-        "supplier": {
-            "label": "회사", "name": "",
-            "address": None, "ceo": None, "contact": None,
-        },
+        "supplier": None,
         "scenarios": [],
         "remarks": [
             "견적유효 : 견적일로부터 15일",
@@ -1264,10 +1262,6 @@ def render_membership_quote_page():
             st.warning("⚠ LibreOffice 미감지 — PDF 변환 건너뜀")
 
     st.title("🏢 멤버십 클라우드 견적서 작성")
-    st.caption(
-        "프랜차이즈 B2B 계약용 견적서 — 시나리오(예: 앱+POS 연동 / POS만)별 페이지 분리, "
-        "구분→분류→항목 3단계 계층, 자동 소계·총계까지 반영됩니다."
-    )
 
     # 견적서 제목 (문서번호는 발행 시 자동 생성)
     state["title"] = st.text_input(
@@ -1277,34 +1271,16 @@ def render_membership_quote_page():
         placeholder="예: 멤버십 클라우드 견적서",
     )
 
-    # ─── 1. 양측 발행 정보 ───
-    st.subheader("1. 발행 정보 (제휴사 / 회사)")
+    # ─── 1. 제휴사(고객) 정보 ───
+    st.subheader("1. 제휴사 (고객) 정보")
+    st.caption("회사(우리) 정보는 '⚙ 설정' 의 브랜드 정보에서 자동으로 가져옵니다.")
 
     cp = state.setdefault("counterparty", {"label": "제휴사", "name": ""})
-    sup = state.setdefault("supplier", {"label": "회사", "name": ""})
-
-    # 회사(우리) 정보 자동 채움 — 브랜드 정보 그대로 가져오기
-    fill_col1, fill_col2 = st.columns([1, 4])
-    with fill_col1:
-        if st.button("⚡ 브랜드 정보로 채우기", use_container_width=True,
-                     help="설정의 브랜드 정보를 회사(우리) 칸에 자동 입력합니다."):
-            try:
-                brand = load_brand(PROJECT_ROOT, state.get("brand_id", "softment"))
-                sup["name"] = brand.company.name_ko
-                sup["address"] = brand.company.address
-                sup["ceo"] = brand.company.ceo
-                sup["contact"] = (
-                    f"{brand.contact_person.name} ({brand.contact_person.title})"
-                    if brand.contact_person and brand.contact_person.title
-                    else (brand.contact_person.name if brand.contact_person else None)
-                )
-                st.rerun()
-            except FileNotFoundError:
-                st.error("브랜드 정보를 찾을 수 없어요. '⚙ 설정' 페이지에서 먼저 입력해주세요.")
+    # supplier 는 PDF 렌더 시 brand.json 에서 자동 채워지므로 폼에서 제거
+    state["supplier"] = None
 
     pc1, pc2 = st.columns(2)
     with pc1:
-        st.markdown("**제휴사 (고객)**")
         cp["name"] = st.text_input(
             "회사명 *", value=cp.get("name") or "", key="mc_cp_name",
             placeholder="예: 주식회사 ○○",
@@ -1313,6 +1289,7 @@ def render_membership_quote_page():
             "대표이사", value=cp.get("ceo") or "", key="mc_cp_ceo",
             placeholder="예: 홍길동",
         )
+    with pc2:
         cp["address"] = st.text_input(
             "주소", value=cp.get("address") or "", key="mc_cp_addr",
             placeholder="예: 서울특별시 ○○구 ○○로 ○○",
@@ -1320,24 +1297,6 @@ def render_membership_quote_page():
         cp["contact"] = st.text_input(
             "담당자", value=cp.get("contact") or "", key="mc_cp_contact",
             placeholder="예: 김담당 (구매팀장)",
-        )
-    with pc2:
-        st.markdown("**회사 (우리)**")
-        sup["name"] = st.text_input(
-            "회사명", value=sup.get("name") or "", key="mc_sup_name",
-            placeholder="예: (주)소프트먼트  — 위 '⚡ 브랜드 정보로 채우기' 활용 가능",
-        )
-        sup["ceo"] = st.text_input(
-            "대표이사", value=sup.get("ceo") or "", key="mc_sup_ceo",
-            placeholder="예: 장하일, 정재훈",
-        )
-        sup["address"] = st.text_input(
-            "주소", value=sup.get("address") or "", key="mc_sup_addr",
-            placeholder="예: 서울특별시 ○○구 ○○로 ○○",
-        )
-        sup["contact"] = st.text_input(
-            "담당자", value=sup.get("contact") or "", key="mc_sup_contact",
-            placeholder="예: 박지은 (QR사업부 매니저)",
         )
 
     # ─── 2. 시나리오 (탭) ───
@@ -1382,7 +1341,7 @@ def render_membership_quote_page():
                 _render_scenario_editor(s_idx, scenario, products)
 
     # ─── 3. Remarks ───
-    st.subheader("3. Remarks (참고 사항)")
+    st.subheader("3. 기타 안내")
     remarks = state.setdefault("remarks", [])
     remarks_text = st.text_area(
         "한 줄에 하나씩",
