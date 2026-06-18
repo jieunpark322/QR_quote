@@ -988,7 +988,6 @@ def _render_qr_catalog_editor():
         num_rows="dynamic",
         use_container_width=True,
         hide_index=True,
-        row_height=100,
         key="catalog_editor_qr",
     )
 
@@ -1105,7 +1104,6 @@ def _render_membership_catalog_editor():
         num_rows="dynamic",
         use_container_width=True,
         hide_index=True,
-        row_height=100,
         key="catalog_editor_mc",
     )
 
