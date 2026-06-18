@@ -78,6 +78,152 @@ PROJECT_ROOT = _detect_project_root()
 
 
 # ═════════════════════════════════════════════════════════════
+# 자동저장 (새로고침/이탈 보호)
+# ═════════════════════════════════════════════════════════════
+
+AUTOSAVE_DIR = PROJECT_ROOT / "output" / "_autosave"
+QR_AUTOSAVE_PATH = AUTOSAVE_DIR / "qr_quote.json"
+MC_AUTOSAVE_PATH = AUTOSAVE_DIR / "membership_quote.json"
+
+# 자동 저장/복원할 위젯 키들
+QR_FORM_KEYS = [
+    "issuer_name", "issuer_phone", "issuer_title", "issuer_email",
+    "cp_name", "cp_reg", "cp_address", "cp_contact_name",
+    "cp_contact_title", "cp_email", "subject", "notes",
+    "total_discount_pct",
+]
+
+
+def _read_json_safe(path: Path) -> dict | None:
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _write_json_safe(path: Path, payload: dict) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, ensure_ascii=False, default=str),
+                        encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _qr_autosave_load_once() -> None:
+    """페이지 진입 시 1회만 호출 — 디스크의 autosave를 session_state에 채워넣음."""
+    if st.session_state.get("_qr_autosave_loaded"):
+        return
+    st.session_state["_qr_autosave_loaded"] = True
+    payload = _read_json_safe(QR_AUTOSAVE_PATH)
+    if not payload:
+        return
+    items = payload.get("items")
+    if items:
+        try:
+            st.session_state["items_df"] = pd.DataFrame(items)
+        except (ValueError, KeyError):
+            pass
+    for k in QR_FORM_KEYS:
+        v = payload.get(k)
+        if v not in (None, "") and k not in st.session_state:
+            st.session_state[k] = v
+
+
+def _qr_autosave_write() -> None:
+    df = st.session_state.get("items_df")
+    payload = {k: st.session_state.get(k) for k in QR_FORM_KEYS}
+    if df is not None and not df.empty:
+        payload["items"] = df.to_dict(orient="records")
+    has_any = (df is not None and not df.empty) or any(payload.get(k) for k in QR_FORM_KEYS)
+    if has_any:
+        _write_json_safe(QR_AUTOSAVE_PATH, payload)
+    else:
+        # 비어있으면 autosave 파일 제거
+        try:
+            QR_AUTOSAVE_PATH.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _qr_autosave_clear() -> None:
+    try:
+        QR_AUTOSAVE_PATH.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _mc_autosave_load_once() -> None:
+    if st.session_state.get("_mc_autosave_loaded"):
+        return
+    st.session_state["_mc_autosave_loaded"] = True
+    payload = _read_json_safe(MC_AUTOSAVE_PATH)
+    if not payload:
+        return
+    if "mc_doc" not in st.session_state and payload.get("mc_doc"):
+        st.session_state["mc_doc"] = payload["mc_doc"]
+    for k in ("mc_issuer_name", "mc_issuer_title",
+              "mc_issuer_phone", "mc_issuer_email"):
+        v = payload.get(k)
+        if v not in (None, "") and k not in st.session_state:
+            st.session_state[k] = v
+
+
+def _mc_autosave_write() -> None:
+    doc = st.session_state.get("mc_doc")
+    payload = {
+        "mc_doc": doc,
+        "mc_issuer_name": st.session_state.get("mc_issuer_name"),
+        "mc_issuer_title": st.session_state.get("mc_issuer_title"),
+        "mc_issuer_phone": st.session_state.get("mc_issuer_phone"),
+        "mc_issuer_email": st.session_state.get("mc_issuer_email"),
+    }
+    has_any = bool(doc) or any(payload.get(k) for k in payload if k != "mc_doc")
+    if has_any:
+        _write_json_safe(MC_AUTOSAVE_PATH, payload)
+    else:
+        try:
+            MC_AUTOSAVE_PATH.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _mc_autosave_clear() -> None:
+    try:
+        MC_AUTOSAVE_PATH.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _inject_beforeunload(active: bool) -> None:
+    """작성 중 내용이 있으면 페이지 이탈 시 브라우저 경고를 띄움."""
+    from streamlit.components.v1 import html
+    flag = "1" if active else "0"
+    html(f"""
+<script>
+(function() {{
+  try {{
+    var w = window.parent;
+    if (!w._qrUnloadHandler) {{
+      w._qrUnloadHandler = function(e) {{
+        if (w._qrUnloadActive) {{
+          e.preventDefault();
+          e.returnValue = '작성 중인 내용이 있어요. 정말 이 페이지를 떠나시겠어요?';
+          return e.returnValue;
+        }}
+      }};
+      w.addEventListener('beforeunload', w._qrUnloadHandler);
+    }}
+    w._qrUnloadActive = ({flag} === 1);
+  }} catch (err) {{ /* iframe cross-origin 등 무시 */ }}
+}})();
+</script>
+""", height=0)
+
+
+# ═════════════════════════════════════════════════════════════
 # 데이터 로더 / 저장 헬퍼
 # ═════════════════════════════════════════════════════════════
 
@@ -207,6 +353,10 @@ def _add_discount_row():
 
 def _reset_items():
     st.session_state.items_df = _empty_items_df()
+    for k in QR_FORM_KEYS:
+        if k in st.session_state:
+            del st.session_state[k]
+    _qr_autosave_clear()
 
 
 def _row_amount(row):
@@ -243,6 +393,7 @@ def _row_amount(row):
 
 
 def render_quote_page():
+    _qr_autosave_load_once()
     _ensure_items_state()
     labels = load_labels(PROJECT_ROOT)
     products = _load_products()
@@ -551,6 +702,14 @@ def render_quote_page():
         _preview_quote(**common_args)
     if generate_clicked:
         _generate_quote(**common_args)
+
+    # 작성 내용 자동저장 + 페이지 이탈 시 브라우저 경고
+    _qr_autosave_write()
+    df = st.session_state.get("items_df")
+    has_data = (df is not None and not df.empty) or any(
+        st.session_state.get(k) for k in QR_FORM_KEYS
+    )
+    _inject_beforeunload(has_data)
 
 
 def _compute_auto_notice_lines(brand_id: str, valid_until: date,
@@ -1455,6 +1614,7 @@ def _build_mc_document(state: dict) -> MembershipQuoteDocument:
 
 
 def render_membership_quote_page():
+    _mc_autosave_load_once()
     _ensure_membership_state()
     state = st.session_state.mc_doc
     products = _load_membership_products()
@@ -1573,6 +1733,11 @@ def render_membership_quote_page():
         if st.button("🗑 전체 초기화", use_container_width=True,
                      help="제휴사·회사·시나리오까지 모든 입력을 비웁니다."):
             st.session_state.mc_doc = _empty_membership_state()
+            for k in ("mc_issuer_name", "mc_issuer_title",
+                      "mc_issuer_phone", "mc_issuer_email"):
+                if k in st.session_state:
+                    del st.session_state[k]
+            _mc_autosave_clear()
             st.rerun()
 
     if not scenarios:
@@ -1636,6 +1801,15 @@ def render_membership_quote_page():
         _preview_membership_quote(state, soffice_available, issuer_contact)
     if generate_clicked:
         _generate_membership_quote(state, soffice_available, issuer_contact)
+
+    # 자동저장 + 페이지 이탈 시 브라우저 경고
+    _mc_autosave_write()
+    doc_has_data = bool(state.get("scenarios")) or bool(state.get("counterparty", {}).get("name"))
+    issuer_has_data = any(
+        st.session_state.get(k)
+        for k in ("mc_issuer_name", "mc_issuer_title", "mc_issuer_phone", "mc_issuer_email")
+    )
+    _inject_beforeunload(doc_has_data or issuer_has_data)
 
 
 def _render_scenario_editor(s_idx: int, scenario: dict, products: list[dict]) -> None:

@@ -363,9 +363,20 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
         _apply_font(r, font, size_pt=9.5, bold=True, color=RGBColor(0xFF, 0xFF, 0xFF))
 
     # 데이터 행 — 음수 amount (할인) 은 빨간색 + 굵게 강조
+    # 1페이지 강제 위해 항목 수에 따라 폰트·행높이 자동 축소
+    n_items = len(items)
+    if n_items <= 8:
+        cell_font_pt, row_h_cm = 9, 1.0
+    elif n_items <= 14:
+        cell_font_pt, row_h_cm = 8, 0.7
+    elif n_items <= 20:
+        cell_font_pt, row_h_cm = 7.5, 0.6
+    else:
+        cell_font_pt, row_h_cm = 7, 0.5
+
     for r_idx, item in enumerate(items, start=1):
         row_obj = table.rows[r_idx]
-        row_obj.height = Cm(1.0)
+        row_obj.height = Cm(row_h_cm)
         row_obj.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
         is_discount = (item.amount or 0) < 0 or (item.unit_price or 0) < 0
         for c_idx, (col_spec, width) in enumerate(zip(active_cols, widths)):
@@ -375,14 +386,20 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
             _vcenter(cell)
             if is_discount:
                 _set_cell_bg(cell, "FDECEA")  # 연한 빨강 배경
-            p = cell.paragraphs[0]
-            p.alignment = align
-            p.paragraph_format.space_before = Pt(0)
-            p.paragraph_format.space_after = Pt(0)
-            run = p.add_run(getter(item))
-            _apply_font(run, font, size_pt=9,
-                        bold=is_discount,
-                        color=DISCOUNT_COLOR if is_discount else None)
+            text_val = getter(item) or ""
+            lines = str(text_val).split("\n") if text_val else [""]
+            for ln_idx, ln in enumerate(lines):
+                if ln_idx == 0:
+                    p = cell.paragraphs[0]
+                else:
+                    p = cell.add_paragraph()
+                p.alignment = align
+                p.paragraph_format.space_before = Pt(0)
+                p.paragraph_format.space_after = Pt(0)
+                run = p.add_run(ln)
+                _apply_font(run, font, size_pt=cell_font_pt,
+                            bold=is_discount,
+                            color=DISCOUNT_COLOR if is_discount else None)
 
 
 def _render_totals(doc, brand: Brand, document: QuoteDocument,
@@ -694,11 +711,13 @@ def render_docx(brand: Brand, document: QuoteDocument, project_root: Path,
     ensure_totals(document, labels.quote.vat_rate)
 
     doc = Document()
+    # 1페이지 보장을 위해 견적서는 여백을 빡빡하게
+    is_quote = document.document_type == "quote"
     for section in doc.sections:
-        section.top_margin = Cm(1.2)
-        section.bottom_margin = Cm(1.2)
-        section.left_margin = Cm(1.8)
-        section.right_margin = Cm(1.8)
+        section.top_margin = Cm(0.8 if is_quote else 1.2)
+        section.bottom_margin = Cm(0.8 if is_quote else 1.2)
+        section.left_margin = Cm(1.4 if is_quote else 1.8)
+        section.right_margin = Cm(1.4 if is_quote else 1.8)
 
     _render_logo(doc, brand, project_root)
 
