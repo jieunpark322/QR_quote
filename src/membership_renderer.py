@@ -149,7 +149,8 @@ def _compute_section_widths(section: MembershipSection,
 
     # 헤더는 기본 한국어 2~3자 (구분, 분류, 기간 등)
     sec_len = _max_line_len([section.name, "구분"])
-    cat_len = _max_line_len([c.name for c in cats] + ["분류"])
+    # 분류 컬럼은 '예상 총 금액' 섹션 합계 라벨이 한 줄에 들어가야 함
+    cat_len = _max_line_len([c.name for c in cats] + ["분류", "예상 총 금액"])
 
     # 상세 구분: name + name_detail + sub_items 줄들 최대치
     detail_strings = []
@@ -197,33 +198,60 @@ def _compute_section_widths(section: MembershipSection,
 
     notes_len = _max_line_len([it.notes or "" for it in items] + ["비고"])
 
-    # 글자수 → cm 환산 (작은 폰트라 한 글자 ~0.15cm 가정)
-    CHAR_CM = 0.16
-    raw = [
-        sec_len * CHAR_CM,
-        cat_len * CHAR_CM,
-        detail_len * CHAR_CM,
-        period_len * CHAR_CM,
-        unit_price_len * CHAR_CM,
-        1.4,                      # 할인 컬럼 (40% / -₩100,000 등)
-        amount_len * CHAR_CM,
-        notes_len * CHAR_CM,
-    ]
+    # 글자수 → cm 환산 (셀 패딩 고려한 여유 폭)
+    CHAR_CM = 0.22       # 한글 한 글자 대략 폭
+    PAD_CM = 0.5         # 셀 좌우 패딩 + 안전 여유
+    MIN_SAFE_CM = 1.2    # 모든 컬럼 최소 폭
 
-    # 최소·최대 제약
-    min_widths = [1.4, 1.0, 3.5, 0.9, 1.5, 1.1, 1.5, 1.0]
-    max_widths = [3.0, 2.2, 7.5, 1.8, 4.0, 1.8, 3.5, 3.0]
+    content_lens = [sec_len, cat_len, detail_len, period_len,
+                    unit_price_len, 4, amount_len, notes_len]  # 5: '40%' 정도
+    # 콘텐츠 글자수 + 패딩 (단어 끝까지 한 줄에 들어가도록)
+    raw = [n * CHAR_CM + PAD_CM for n in content_lens]
+    raw[2] = max(raw[2], detail_len * CHAR_CM + PAD_CM)  # 상세 구분은 줄바꿈 허용 가능
+
+    # 최소 폭: 헤더가 한 줄에 들어가는 너비 보장
+    headers_for_min = ["구분", "분류", "상세 구분", "기간", "단가",
+                       "할인", "금액", "비고"]
+    min_widths = [
+        max(len(h) * CHAR_CM + PAD_CM, MIN_SAFE_CM) for h in headers_for_min
+    ]
+    max_widths = [3.5, 3.0, 7.5, 1.8, 3.5, 2.0, 3.0, 3.5]
+
+    # 핵심 컬럼(구분/분류)은 셀 콘텐츠가 한 줄에 들어가도록 보장 — max로 cap
+    for idx in (0, 1):
+        wanted = content_lens[idx] * CHAR_CM + PAD_CM
+        min_widths[idx] = min(max(min_widths[idx], wanted), max_widths[idx])
+    # 기간/할인/금액도 짧은 데이터라 한 줄 보장 (max 이내)
+    for idx in (3, 5, 6):
+        wanted = content_lens[idx] * CHAR_CM + PAD_CM
+        min_widths[idx] = min(max(min_widths[idx], wanted), max_widths[idx])
 
     constrained = [
         min(max(raw_w, min_widths[i]), max_widths[i])
         for i, raw_w in enumerate(raw)
     ]
 
-    # 합계가 사용 가능한 폭을 넘으면 비율 스케일다운
+    # 합계가 사용 가능 폭을 넘으면 — 핵심 컬럼은 최소 폭 유지, 긴 컬럼(상세·비고)에서 양보
     total = sum(constrained)
     if total > usable_cm:
-        scale = usable_cm / total
-        constrained = [w * scale for w in constrained]
+        excess = total - usable_cm
+        # 축소 우선순위 가중치 (상세 구분 > 비고 > 단가/금액 약간)
+        shrink_weights = [0.0, 0.0, 3.0, 0.0, 0.3, 0.0, 0.3, 1.5]
+        sw_sum = sum(shrink_weights)
+        if sw_sum > 0:
+            constrained = [
+                w - excess * shrink_weights[i] / sw_sum
+                for i, w in enumerate(constrained)
+            ]
+            # 최소 폭 클램프 (헤더+콘텐츠가 한 줄에 들어갈 폭은 보장)
+            constrained = [
+                max(w, min_widths[i]) for i, w in enumerate(constrained)
+            ]
+            # 그래도 초과면 마지막 비례 축소 (상세 구분 우선)
+            total2 = sum(constrained)
+            if total2 > usable_cm:
+                # 상세 구분만 남은 excess 만큼 줄임
+                constrained[2] = max(constrained[2] - (total2 - usable_cm), 3.0)
     else:
         # 남는 공간은 콘텐츠 폭이 큰 컬럼(상세구분, 단가, 금액)에 가중 분배
         slack = usable_cm - total
