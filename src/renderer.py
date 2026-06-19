@@ -387,7 +387,7 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
     ]
 
     # 콘텐츠 길이 기반 컬럼 너비 — 짧은 컬럼은 좁게, 긴(설명·항목·비고) 컬럼은 넓게
-    USABLE_WIDTH = 18.4  # 좌우 여백 1.4cm 가정
+    USABLE_WIDTH = 19.0  # 견적서 좌우 여백 1.0cm 가정 — 설명 컬럼 한 줄 확보
     CHAR_CM = 0.28       # 한글 한 글자 대략 폭 (셀 padding 고려해 여유)
     PAD_CM = 0.6         # 셀 좌우 패딩 + 안전 여백
     MIN_SAFE_CM = 1.2    # 헤더 글자수와 무관하게 보장하는 최소 폭
@@ -435,11 +435,11 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
     if total > USABLE_WIDTH:
         # 사용 가능 폭 초과 — 핵심 컬럼/설명은 보존, 비고/항목에서 우선 양보
         excess = total - USABLE_WIDTH
-        # 가중치 높을수록 더 많이 줄어듦. 설명은 가장 적게 줄어들도록 (한 줄 보장)
+        # 가중치 높을수록 더 많이 줄어듦. 설명은 절대 안 줄어들도록 (한 줄 보장)
         shrink_weights_by_key = {
             "notes": 4.0,         # 비고 가장 많이 양보
             "name": 2.0,
-            "description": 1.0,   # 설명 최소만 줄어듦
+            # "description": 0 (생략) — 사용자가 입력한 줄 폭 그대로 보존
         }
         weights = [shrink_weights_by_key.get(c[0], 0.0) for c in active_cols]
         wsum = sum(weights)
@@ -451,11 +451,28 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
             for i, c in enumerate(active_cols):
                 if c[0] in shrink_weights_by_key:
                     raw_widths[i] = max(raw_widths[i], 1.4)
-            # 그래도 초과면 마지막 비례 축소
+            # 그래도 초과면 마지막 비례 축소 — 단, 설명 컬럼은 제외 (한 줄 보장)
             new_total = sum(raw_widths)
             if new_total > USABLE_WIDTH:
-                scale = USABLE_WIDTH / new_total
-                raw_widths = [w * scale for w in raw_widths]
+                desc_idx = next(
+                    (i for i, c in enumerate(active_cols) if c[0] == "description"),
+                    None,
+                )
+                if desc_idx is not None:
+                    others_sum = sum(w for i, w in enumerate(raw_widths) if i != desc_idx)
+                    target_others = USABLE_WIDTH - raw_widths[desc_idx]
+                    if others_sum > 0 and target_others > 0:
+                        scale = target_others / others_sum
+                        raw_widths = [
+                            w if i == desc_idx else max(w * scale, 1.2)
+                            for i, w in enumerate(raw_widths)
+                        ]
+                    else:
+                        scale = USABLE_WIDTH / new_total
+                        raw_widths = [w * scale for w in raw_widths]
+                else:
+                    scale = USABLE_WIDTH / new_total
+                    raw_widths = [w * scale for w in raw_widths]
         else:
             # 줄일 수 있는 컬럼이 없으면 비례 축소
             scale = USABLE_WIDTH / total
@@ -845,8 +862,8 @@ def render_docx(brand: Brand, document: QuoteDocument, project_root: Path,
     for section in doc.sections:
         section.top_margin = Cm(0.8 if is_quote else 1.2)
         section.bottom_margin = Cm(0.8 if is_quote else 1.2)
-        section.left_margin = Cm(1.4 if is_quote else 1.8)
-        section.right_margin = Cm(1.4 if is_quote else 1.8)
+        section.left_margin = Cm(1.0 if is_quote else 1.8)
+        section.right_margin = Cm(1.0 if is_quote else 1.8)
 
     _render_logo(doc, brand, project_root)
 
