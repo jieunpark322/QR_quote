@@ -394,14 +394,14 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
 
     # 컬럼 키별 max 범위 (lo 는 헤더+콘텐츠가 한 줄에 들어갈 너비를 자동 계산)
     max_by_key = {
-        "name":        5.0,
-        "description": 6.0,
-        "unit_price":  3.0,    # ₩X,XXX,XXX 7자리 + 패딩
-        "period":      2.2,    # '기간(횟수)' 6글자 헤더가 한 줄
+        "name":        3.5,    # 항목명은 1~2단어 위주
+        "description": 7.5,    # 설명이 가장 우선 — 넓게
+        "unit_price":  3.0,
+        "period":      2.2,
         "qty":         1.5,
         "discount":    2.0,
-        "amount":      3.4,    # ₩XX,XXX,XXX 큰 금액 한 줄 (잘림 방지)
-        "notes":       4.0,
+        "amount":      3.4,
+        "notes":       2.8,    # 비고는 줄여서 설명에 양보
     }
 
     def _max_line_len(strings):
@@ -433,10 +433,13 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
 
     total = sum(raw_widths)
     if total > USABLE_WIDTH:
-        # 사용 가능 폭 초과 — 핵심 컬럼은 보존, 긴 컬럼(설명/항목/비고)에서 양보
+        # 사용 가능 폭 초과 — 핵심 컬럼/설명은 보존, 비고/항목에서 우선 양보
         excess = total - USABLE_WIDTH
+        # 가중치 높을수록 더 많이 줄어듦. 설명은 가장 적게 줄어들도록 (한 줄 보장)
         shrink_weights_by_key = {
-            "description": 4.0, "name": 1.0, "notes": 2.0,
+            "notes": 4.0,         # 비고 가장 많이 양보
+            "name": 2.0,
+            "description": 1.0,   # 설명 최소만 줄어듦
         }
         weights = [shrink_weights_by_key.get(c[0], 0.0) for c in active_cols]
         wsum = sum(weights)
