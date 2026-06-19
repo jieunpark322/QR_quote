@@ -1667,12 +1667,14 @@ def _render_qr_catalog_editor():
                 width="large",
             ),
             "unit_price": st.column_config.NumberColumn(
-                "단가 (원)", min_value=0, step=1000, format="₩%,d",
+                "단가", min_value=0, step=1000, format="%,d",
                 width="small",
+                help="숫자만 입력. 통화 기호는 옆 '통화' 컬럼 설정에 따라 견적서 PDF 에서 자동 표기됩니다.",
             ),
             "currency": st.column_config.SelectboxColumn(
                 "통화", options=["KRW", "USD", "EUR", "JPY"],
                 width="small",
+                help="견적서 PDF 에서 단가 옆에 자동으로 붙는 통화 기호 (₩ / $ / € / ¥).",
             ),
         },
         num_rows="dynamic",
