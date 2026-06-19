@@ -317,18 +317,19 @@ def _render_header_qr_style(doc, document: MembershipQuoteDocument,
     primary = _hex_to_rgb(brand.branding.colors.primary)
 
     # 제목
-    _add_paragraph(doc, document.title, font=font, size_pt=14, bold=True,
+    _add_paragraph(doc, document.title, font=font, size_pt=12, bold=True,
                    alignment=WD_ALIGN_PARAGRAPH.CENTER, color=primary,
                    space_after_pt=3)
 
-    # 좌:회사정보 (넓게) | 우:발급정보 (컴팩트)
-    LEFT_W = Cm(11.5)
-    RIGHT_W = Cm(6.5)
+    # 좌:회사정보 (넓게) | 우:발급정보 (컴팩트) — 합 = USABLE_WIDTH 19.5cm
+    LEFT_W = Cm(12.5)
+    RIGHT_W = Cm(7.0)
     info_table = doc.add_table(rows=1, cols=2)
     info_table.autofit = False
     info_table.alignment = WD_TABLE_ALIGNMENT.LEFT
     info_table.columns[0].width = LEFT_W
     info_table.columns[1].width = RIGHT_W
+    _force_fixed_column_widths(info_table, [LEFT_W, RIGHT_W])
     info_table.rows[0].height = Cm(3.0)
     info_table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
 
@@ -412,7 +413,11 @@ def _render_counterparty_qr_style(doc, document: MembershipQuoteDocument,
 
     cp = document.counterparty
     table = doc.add_table(rows=1, cols=1)
+    table.alignment = WD_TABLE_ALIGNMENT.LEFT
+    table.columns[0].width = Cm(19.5)
+    _force_fixed_column_widths(table, [Cm(19.5)])
     cell = table.rows[0].cells[0]
+    cell.width = Cm(19.5)
     _vcenter(cell)
     _set_cell_bg(cell, "FAFBFD")
 
@@ -663,7 +668,7 @@ def _render_section_table(doc, section: MembershipSection, brand: Brand) -> None
 
     cols_n = 8
     table = doc.add_table(rows=total_rows, cols=cols_n)
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table.alignment = WD_TABLE_ALIGNMENT.LEFT
     _set_table_borders(table, color="BFBFBF", size=4)
 
     headers = ["구분", "분류", "상세 구분", "기간", "단가", "할인", "금액", "비고"]

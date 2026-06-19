@@ -185,19 +185,19 @@ def _render_header(doc, brand: Brand, document: QuoteDocument,
     primary = _hex_to_rgb(brand.branding.colors.primary)
 
     title_text = labels.quote.title if document.document_type == "quote" else labels.contract.title
-    _add_paragraph(doc, title_text, font=font, size_pt=14, bold=True,
+    _add_paragraph(doc, title_text, font=font, size_pt=12, bold=True,
                    alignment=WD_ALIGN_PARAGRAPH.CENTER, color=primary, space_after_pt=3)
 
-    # 발행자(좌)를 넓게, 발행정보(우)를 우측 끝으로 컴팩트하게
-    LEFT_W = Cm(11.5)
-    RIGHT_W = Cm(6.5)
+    # 발행자(좌)를 넓게, 발행정보(우)를 우측 끝으로 컴팩트하게 — 합 = USABLE_WIDTH 19.5cm
+    LEFT_W = Cm(12.5)
+    RIGHT_W = Cm(7.0)
     info_table = doc.add_table(rows=1, cols=2)
     info_table.autofit = False
     info_table.alignment = WD_TABLE_ALIGNMENT.LEFT
     info_table.columns[0].width = LEFT_W
     info_table.columns[1].width = RIGHT_W
+    _force_fixed_column_widths(info_table, [LEFT_W, RIGHT_W])
 
-    # 우측 inner 표(5행 × 0.6cm = 3.0cm)와 맞춰 외부 행 높이 명시 → 좌측도 vAlign center 동작
     info_table.rows[0].height = Cm(3.0)
     info_table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
 
@@ -293,7 +293,12 @@ def _render_counterparty(doc, brand: Brand, document: QuoteDocument,
 
     cp = document.counterparty
     table = doc.add_table(rows=1, cols=1)
+    table.alignment = WD_TABLE_ALIGNMENT.LEFT
+    # 페이지 폭 가득 (들여쓰기 방지)
+    table.columns[0].width = Cm(19.5)
+    _force_fixed_column_widths(table, [Cm(19.5)])
     cell = table.rows[0].cells[0]
+    cell.width = Cm(19.5)
     _vcenter(cell)
     _set_cell_bg(cell, "FAFBFD")
 
@@ -480,7 +485,7 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
     headers = [c[1] for c in active_cols]
 
     table = doc.add_table(rows=1 + len(items), cols=len(headers))
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table.alignment = WD_TABLE_ALIGNMENT.LEFT
     _set_table_borders(table, color="9FB0CC", size=4)
     # LibreOffice PDF 변환 시 컬럼 너비가 무시되지 않도록 layout fixed + tcW 강제
     _force_fixed_column_widths(table, widths)
@@ -597,7 +602,7 @@ def _render_totals(doc, brand: Brand, document: QuoteDocument,
         value_col_count = 2 if n_cols >= 3 else 1
         label_col_count = n_cols - value_col_count
         table = doc.add_table(rows=len(rows), cols=n_cols)
-        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        table.alignment = WD_TABLE_ALIGNMENT.LEFT
         _set_table_borders(table, color="9FB0CC", size=4)
         _force_fixed_column_widths(table, item_table_widths)
         for idx, (label, value, highlight) in enumerate(rows):
