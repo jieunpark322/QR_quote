@@ -129,7 +129,7 @@ DISCOUNT_BG = "FDECEA"
 
 
 def _compute_section_widths(section: MembershipSection,
-                            usable_cm: float = 18.8) -> list:
+                            usable_cm: float = 19.5) -> list:
     """콘텐츠 길이 + 중요도 기반으로 컬럼 너비를 유동 산출.
 
     [구분, 분류, 상세 구분, 기간, 단가, 할인, 금액, 비고]
@@ -199,9 +199,9 @@ def _compute_section_widths(section: MembershipSection,
     notes_len = _max_line_len([it.notes or "" for it in items] + ["비고"])
 
     # 글자수 → cm 환산 (셀 패딩 고려한 여유 폭)
-    CHAR_CM = 0.22       # 한글 한 글자 대략 폭
-    PAD_CM = 0.5         # 셀 좌우 패딩 + 안전 여유
-    MIN_SAFE_CM = 1.2    # 모든 컬럼 최소 폭
+    CHAR_CM = 0.25       # 한글 한 글자 폭 (8pt 기준 — 멤버십은 폰트가 더 작음)
+    PAD_CM = 0.45        # 셀 좌우 패딩 + 안전 여유
+    MIN_SAFE_CM = 1.1    # 모든 컬럼 최소 폭
 
     content_lens = [sec_len, cat_len, detail_len, period_len,
                     unit_price_len, 4, amount_len, notes_len]  # 5: '40%' 정도
@@ -814,8 +814,8 @@ def render_membership_docx(brand: Brand, document: MembershipQuoteDocument,
     for section in doc.sections:
         section.top_margin = Cm(0.9)
         section.bottom_margin = Cm(0.9)
-        section.left_margin = Cm(1.1)
-        section.right_margin = Cm(1.1)
+        section.left_margin = Cm(0.75)
+        section.right_margin = Cm(0.75)
 
     for s_idx, scenario in enumerate(document.scenarios):
         if s_idx > 0:
