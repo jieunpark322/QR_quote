@@ -254,19 +254,16 @@ def _compute_section_widths(section: MembershipSection,
                 w - excess * shrink_weights[i] / sw_sum
                 for i, w in enumerate(constrained)
             ]
-            # 최소 폭 클램프 (헤더+콘텐츠가 한 줄에 들어갈 폭은 보장)
-            constrained = [
-                max(w, min_widths[i]) for i, w in enumerate(constrained)
-            ]
-            # 그래도 초과면 마지막 비례 축소 (상세 구분 우선)
+            # 최소 폭 클램프 (모든 컬럼 0.5cm 이상)
+            constrained = [max(w, 0.5) for w in constrained]
+            # 그래도 초과면 비고/상세에서 추가 양보
             total2 = sum(constrained)
             if total2 > usable_cm:
-                # 상세 구분만 남은 excess 만큼 줄임
-                constrained[2] = max(constrained[2] - (total2 - usable_cm), 3.0)
+                constrained[2] = max(constrained[2] - (total2 - usable_cm), 2.5)
     else:
-        # 남는 공간은 콘텐츠 폭이 큰 컬럼(상세구분, 단가, 금액)에 가중 분배
+        # 남는 공간은 콘텐츠 폭이 큰 컬럼(상세구분·비고·구분)에 가중 분배
         slack = usable_cm - total
-        slack_weights = [0.3, 0.2, 2.0, 0.2, 1.0, 0.0, 0.8, 0.5]
+        slack_weights = [0.5, 0.3, 4.0, 0.0, 0.5, 0.0, 0.3, 1.5]
         sw_sum = sum(slack_weights)
         if sw_sum > 0:
             constrained = [
