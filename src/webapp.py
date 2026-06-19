@@ -1569,6 +1569,18 @@ def render_catalog_page():
         _render_membership_catalog_editor()
 
 
+def _safe_str(v) -> str:
+    """pandas Series 값을 NaN-safe 하게 문자열로 변환 (NaN/None → '')."""
+    if v is None:
+        return ""
+    try:
+        if pd.isna(v):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return v if isinstance(v, str) else str(v)
+
+
 def _qr_catalog_signature(products: list[dict]) -> str:
     """카탈로그 상태 비교용 시그니처 (변경 감지)."""
     return json.dumps(products, ensure_ascii=False, sort_keys=True, default=str)
@@ -1674,20 +1686,23 @@ def _render_qr_catalog_editor():
     if save_clicked:
         new_products = []
         for idx, row in edited.iterrows():
-            name = (row.get("name") or "").strip()
+            name = _safe_str(row.get("name")).strip()
             if not name:
                 continue
-            code = (row.get("code") or "").strip()
+            code = _safe_str(row.get("code")).strip()
             if not code:
                 # 코드가 비어있으면 품목명 기반 자동 생성
                 base = "".join(c for c in name if c.isalnum() or c in "_-")[:20] or "ITEM"
                 code = f"{base}-{idx + 1}"
+            up_v = row.get("unit_price")
             new_products.append({
                 "code": code,
                 "name": name,
-                "description": (row.get("description") or "").strip(),
-                "unit_price": int(row.get("unit_price") or 0),
-                "currency": row.get("currency") or "KRW",
+                "description": _safe_str(row.get("description")).strip(),
+                "unit_price": (int(up_v)
+                               if pd.notna(up_v) and up_v not in ("", None)
+                               else 0),
+                "currency": _safe_str(row.get("currency")).strip() or "KRW",
             })
         _save_products(new_products)
         st.session_state["_qr_catalog_original_sig"] = _qr_catalog_signature(new_products)
@@ -1697,14 +1712,17 @@ def _render_qr_catalog_editor():
     # ── 미저장 변경 감지 → 페이지 이탈 시 브라우저 경고 ──
     current_snapshot = [
         {
-            "code": (r.get("code") or "").strip(),
-            "name": (r.get("name") or "").strip(),
-            "description": (r.get("description") or "").strip(),
-            "unit_price": int(r.get("unit_price") or 0),
-            "currency": r.get("currency") or "KRW",
+            "code": _safe_str(r.get("code")).strip(),
+            "name": _safe_str(r.get("name")).strip(),
+            "description": _safe_str(r.get("description")).strip(),
+            "unit_price": (int(r.get("unit_price"))
+                           if pd.notna(r.get("unit_price"))
+                           and r.get("unit_price") not in ("", None)
+                           else 0),
+            "currency": _safe_str(r.get("currency")).strip() or "KRW",
         }
         for _, r in edited.iterrows()
-        if (r.get("name") or "").strip()
+        if _safe_str(r.get("name")).strip()
     ]
     dirty = _qr_catalog_signature(current_snapshot) != st.session_state.get(
         "_qr_catalog_original_sig", ""
@@ -1849,17 +1867,17 @@ def _render_membership_catalog_editor():
     if save_clicked:
         new_products = []
         for idx, row in edited.iterrows():
-            name = (row.get("name") or "").strip()
+            name = _safe_str(row.get("name")).strip()
             if not name:
                 continue
-            code = (row.get("code") or "").strip()
+            code = _safe_str(row.get("code")).strip()
             if not code:
                 base = "".join(c for c in name if c.isalnum() or c in "_-")[:20] or "MC"
                 code = f"{base}-{idx + 1}"
             item: dict = {
                 "code": code,
-                "section": (row.get("section") or "").strip(),
-                "subcategory": (row.get("subcategory") or "").strip(),
+                "section": _safe_str(row.get("section")).strip(),
+                "subcategory": _safe_str(row.get("subcategory")).strip(),
                 "name": name,
             }
             bp = row.get("billing_period")
@@ -1895,21 +1913,22 @@ def _render_membership_catalog_editor():
     # ── 미저장 변경 감지 → 페이지 이탈 시 브라우저 경고 ──
     snapshot = []
     for idx, r in edited.iterrows():
-        name = (r.get("name") or "").strip()
+        name = _safe_str(r.get("name")).strip()
         if not name:
             continue
+        up_v = r.get("unit_price")
         snapshot.append({
-            "code": (r.get("code") or "").strip(),
-            "section": (r.get("section") or "").strip(),
-            "subcategory": (r.get("subcategory") or "").strip(),
+            "code": _safe_str(r.get("code")).strip(),
+            "section": _safe_str(r.get("section")).strip(),
+            "subcategory": _safe_str(r.get("subcategory")).strip(),
             "name": name,
-            "billing_period": (r.get("billing_period") or "").strip(),
-            "unit_price": (float(r.get("unit_price"))
-                           if pd.notna(r.get("unit_price")) and r.get("unit_price") not in ("", None)
+            "billing_period": _safe_str(r.get("billing_period")).strip(),
+            "unit_price": (float(up_v)
+                           if pd.notna(up_v) and up_v not in ("", None)
                            else None),
-            "unit_price_text": (r.get("unit_price_text") or "").strip(),
-            "default_amount_text": (r.get("default_amount_text") or "").strip(),
-            "notes": (r.get("notes") or "").strip(),
+            "unit_price_text": _safe_str(r.get("unit_price_text")).strip(),
+            "default_amount_text": _safe_str(r.get("default_amount_text")).strip(),
+            "notes": _safe_str(r.get("notes")).strip(),
         })
     dirty = _mc_catalog_signature(snapshot) != st.session_state.get(
         "_mc_catalog_original_sig", ""
