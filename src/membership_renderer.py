@@ -559,7 +559,7 @@ def _render_table_header_row(table, row_idx: int, headers: list[str], widths: li
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(0)
         r = p.add_run(h)
-        _apply_font(r, font, size_pt=8, bold=True, color=RGBColor(0xFF, 0xFF, 0xFF))
+        _apply_font(r, font, size_pt=7, bold=True, color=RGBColor(0xFF, 0xFF, 0xFF))
 
 
 def _fill_cell(cell, text: str, *, font: str, size_pt: float = 9,

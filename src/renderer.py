@@ -492,7 +492,7 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
 
     # 헤더 행
     header_row = table.rows[0]
-    header_row.height = Cm(0.6)
+    header_row.height = Cm(0.5)
     header_row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
     for idx, (col_spec, width) in enumerate(zip(active_cols, widths)):
         cell = header_row.cells[idx]
@@ -504,7 +504,7 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(0)
         r = p.add_run(col_spec[1])
-        _apply_font(r, font, size_pt=8, bold=True, color=RGBColor(0xFF, 0xFF, 0xFF))
+        _apply_font(r, font, size_pt=7, bold=True, color=RGBColor(0xFF, 0xFF, 0xFF))
 
     # 폰트는 위 컬럼 너비 계산에서 결정된 chosen_font_pt 사용 — 한 줄 보장 우선
     cell_font_pt = chosen_font_pt
