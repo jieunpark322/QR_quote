@@ -388,7 +388,7 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
     ]
 
     # 콘텐츠 길이 기반 컬럼 너비
-    USABLE_WIDTH = 19.0  # 견적서 좌우 여백 1.0cm 가정
+    USABLE_WIDTH = 19.5  # 견적서 좌우 여백 0.75cm 가정 (핵심 컬럼 한 줄 보장 우선)
     CHAR_CM = 0.27       # 한글 한 글자 폭 (8.5pt 폰트 정확 측정값)
     PAD_CM = 0.5         # 셀 좌우 패딩 + 안전 여유
     MIN_SAFE_CM = 1.1    # 헤더 글자수와 무관하게 보장하는 최소 폭
@@ -934,8 +934,8 @@ def render_docx(brand: Brand, document: QuoteDocument, project_root: Path,
     for section in doc.sections:
         section.top_margin = Cm(0.8 if is_quote else 1.2)
         section.bottom_margin = Cm(0.8 if is_quote else 1.2)
-        section.left_margin = Cm(1.0 if is_quote else 1.8)
-        section.right_margin = Cm(1.0 if is_quote else 1.8)
+        section.left_margin = Cm(0.75 if is_quote else 1.8)
+        section.right_margin = Cm(0.75 if is_quote else 1.8)
 
     _render_logo(doc, brand, project_root)
 
