@@ -623,33 +623,18 @@ def _render_clauses(doc, brand: Brand, document: QuoteDocument, project_root: Pa
 
 def _render_etc_notice(doc, brand: Brand, document: QuoteDocument,
                        labels: DocumentLabels) -> None:
+    """기타 안내 — 사용자가 textarea 에 입력한 notes 를 줄별 bullet 으로 표시.
+
+    자동 안내(유효기간/입금계좌)는 webapp 의 textarea 기본값으로 채워지므로
+    여기서는 추가하지 않음 (사용자가 본 그대로 PDF 에 반영).
+    """
     font = brand.branding.font_family
     primary = _hex_to_rgb(brand.branding.colors.primary)
     ql = labels.quote
 
-    bullets: list[str] = []
-    # 1) 유효기간 자동 문구 (템플릿 비어있으면 생략)
-    if (document.document_type == "quote"
-            and document.valid_until
-            and ql.auto_notices.validity_template):
-        valid_str = document.valid_until.strftime("%Y년 %m월 %d일")
-        bullets.append(ql.auto_notices.validity_template.format(valid_until=valid_str))
-    # 2) 문서별 추가 비고 (data JSON의 notes)
-    if document.notes:
-        bullets.append(document.notes)
-    # 3) 입금 계좌 자동 문구 (템플릿 비어있으면 생략)
-    if brand.bank_account and ql.auto_notices.bank_account_template:
-        ba = brand.bank_account
-        bullets.append(ql.auto_notices.bank_account_template.format(
-            bank=ba.bank,
-            account_number=ba.account_number,
-            account_holder=ba.account_holder or "",
-        ))
-    # 4) 항상 표시되는 고정 문구
-    for static in ql.static_notices:
-        if static:
-            bullets.append(static)
-
+    if not document.notes:
+        return
+    bullets = [ln.strip() for ln in document.notes.splitlines() if ln.strip()]
     if not bullets:
         return
 

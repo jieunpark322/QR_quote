@@ -1256,14 +1256,21 @@ def render_quote_page():
         m2.metric(f"부가세 ({int(vat_rate * 100)}%)", f"₩{vat:,}")
         m3.metric("합계 금액", f"₩{total:,}")
 
-    st.subheader("4. 기타 안내 (선택)")
+    st.subheader("4. 기타 안내")
+    # 자동 안내 문구를 textarea 기본값으로 미리 채움 — 사용자가 직접 수정 가능
+    # (notes 가 비어있을 때만 자동 채움. 표본/히스토리 불러오면 그 값이 들어가 자동 채움 X)
+    if not st.session_state.get("notes"):
+        auto_lines = _compute_auto_notice_lines(brand_id, valid_until, labels)
+        if auto_lines:
+            st.session_state["notes"] = "\n".join(auto_lines)
     notes = st.text_area(
         "기타 안내", key="notes",
         placeholder=(
-            "이 견적서에만 들어갈 추가 문구가 있다면 적어주세요.\n"
-            "(유효기간·입금 계좌 안내는 자동으로 견적서에 포함됩니다.)"
+            "유효기간·입금 계좌·결제 조건 등 안내문구를 줄별로 입력하세요. "
+            "(처음에는 자동으로 채워지며, 자유롭게 수정 가능합니다.)"
         ),
-        label_visibility="collapsed", height=80,
+        label_visibility="collapsed", height=120,
+        help="여기에 입력된 내용이 견적서 PDF 의 '기타 안내' 영역에 그대로 표시됩니다.",
     )
 
     st.divider()
