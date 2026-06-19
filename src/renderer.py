@@ -436,11 +436,11 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
     if total > USABLE_WIDTH:
         # 사용 가능 폭 초과 — 핵심 컬럼/설명은 보존, 비고/항목에서 우선 양보
         excess = total - USABLE_WIDTH
-        # 가중치 높을수록 더 많이 줄어듦. 설명은 절대 안 줄어들도록 (한 줄 보장)
+        # 가중치 높을수록 더 많이 줄어듦. 설명·항목은 절대 안 줄어들도록 (한 줄 보장)
         shrink_weights_by_key = {
-            "notes": 4.0,         # 비고 가장 많이 양보
-            "name": 2.0,
-            # "description": 0 (생략) — 사용자가 입력한 줄 폭 그대로 보존
+            "notes": 5.0,         # 비고가 가장 많이 양보 (보통 짧음)
+            # "name": 0 — 항목은 한 줄 보장
+            # "description": 0 — 설명도 한 줄 보장
         }
         weights = [shrink_weights_by_key.get(c[0], 0.0) for c in active_cols]
         wsum = sum(weights)
@@ -516,23 +516,20 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
         r = p.add_run(col_spec[1])
         _apply_font(r, font, size_pt=9.5, bold=True, color=RGBColor(0xFF, 0xFF, 0xFF))
 
-    # 데이터 행 — 음수 amount (할인) 은 빨간색 + 굵게 강조
-    # 1페이지 강제 — 폰트는 최대 9pt 로 작게 유지하고 행 높이만 조정해서 채움
-    # (폰트를 키우면 컬럼 폭을 콘텐츠가 초과해 두 줄로 잘려서 안 됨)
+    # 데이터 행 — 폰트는 컬럼 너비 계산(CHAR_CM=0.25)에 맞춰 8.5pt 를 최대로 유지
+    # 항목 수가 많으면 폰트도 단계적으로 더 작게 + 행 높이로 한 장 자동 채움
     n_items = len(items)
-    if n_items <= 3:
-        cell_font_pt, row_h_cm = 9, 2.0      # 행 높이만 크게 → 한 장 시각적 채움
-    elif n_items <= 6:
-        cell_font_pt, row_h_cm = 9, 1.5
-    elif n_items <= 10:
-        cell_font_pt, row_h_cm = 9, 1.1
-    elif n_items <= 14:
-        cell_font_pt, row_h_cm = 9, 0.85
-    elif n_items <= 18:
-        cell_font_pt, row_h_cm = 8.5, 0.7
-    elif n_items <= 22:
-        cell_font_pt, row_h_cm = 8, 0.6
-    elif n_items <= 28:
+    if n_items <= 4:
+        cell_font_pt, row_h_cm = 8.5, 1.8    # 행 높이로 시각적 채움
+    elif n_items <= 7:
+        cell_font_pt, row_h_cm = 8.5, 1.3
+    elif n_items <= 11:
+        cell_font_pt, row_h_cm = 8.5, 1.0
+    elif n_items <= 15:
+        cell_font_pt, row_h_cm = 8.5, 0.8
+    elif n_items <= 20:
+        cell_font_pt, row_h_cm = 8, 0.65
+    elif n_items <= 26:
         cell_font_pt, row_h_cm = 7.5, 0.55
     else:
         cell_font_pt, row_h_cm = 7, 0.5
