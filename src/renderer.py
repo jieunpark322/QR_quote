@@ -610,8 +610,8 @@ def _render_totals(doc, brand: Brand, document: QuoteDocument,
     # 품목 표 widths 가 있으면 동일 컬럼 구조 + 라벨/값 가로 병합 → 세로 선 정렬
     if item_table_widths and len(item_table_widths) >= 2:
         n_cols = len(item_table_widths)
-        # 값 컬럼은 마지막 1개 (공급가)만 차지. 라벨은 나머지 전부.
-        value_col_count = 1
+        # 값 영역은 마지막 2컬럼(공급가 + 비고) 가로 병합 → 큰 금액도 한 줄에 들어감
+        value_col_count = 2 if n_cols >= 3 else 1
         label_col_count = n_cols - value_col_count
         table = doc.add_table(rows=len(rows), cols=n_cols)
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -625,8 +625,10 @@ def _render_totals(doc, brand: Brand, document: QuoteDocument,
             label_cell = row_obj.cells[0]
             for j in range(1, label_col_count):
                 label_cell = label_cell.merge(row_obj.cells[j])
-            # 값 셀: 마지막 컬럼 (이미 단일이라 별도 merge 불필요)
+            # 값 셀: 라벨 다음 ~ 마지막 컬럼 병합
             value_cell = row_obj.cells[label_col_count]
+            for j in range(label_col_count + 1, n_cols):
+                value_cell = value_cell.merge(row_obj.cells[j])
             _vcenter(label_cell)
             _vcenter(value_cell)
             if highlight:
