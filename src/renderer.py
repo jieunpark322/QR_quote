@@ -387,23 +387,24 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
         if c[5] or (c[6] is not None and c[6](items))
     ]
 
-    # 콘텐츠 길이 기반 컬럼 너비
-    USABLE_WIDTH = 19.5  # 견적서 좌우 여백 0.75cm 가정 (핵심 컬럼 한 줄 보장 우선)
-    CHAR_CM = 0.27       # 한글 한 글자 폭 (8.5pt 폰트 정확 측정값)
-    PAD_CM = 0.5         # 셀 좌우 패딩 + 안전 여유
-    MIN_SAFE_CM = 1.1    # 헤더 글자수와 무관하게 보장하는 최소 폭
+    # ── 콘텐츠 한 줄 보장 우선 / 안 들어가면 폰트를 작게 줄여가며 시도 ──
+    USABLE_WIDTH = 19.5      # 견적서 좌우 여백 0.75cm 가정
+    PAD_CM = 0.45            # 셀 좌우 패딩
+    MIN_SAFE_CM = 1.0        # 모든 컬럼 최소 폭
 
-    # 컬럼 키별 max 범위 (lo 는 헤더+콘텐츠가 한 줄에 들어갈 너비를 자동 계산)
-    max_by_key = {
-        "name":        4.5,    # 항목 한 줄 보장 위해 확대
-        "description": 7.5,    # 설명이 가장 우선
-        "unit_price":  3.0,
-        "period":      2.2,
-        "qty":         1.5,
-        "discount":    2.0,
-        "amount":      3.4,
-        "notes":       2.8,    # 비고는 줄여서 설명에 양보
+    # 폰트 후보 (큰 것부터) — 한글 한 글자 폭 (대략 폰트 pt × 0.032)
+    CHAR_CM_BY_PT = {
+        9.0:  0.285,
+        8.5:  0.27,
+        8.0:  0.255,
+        7.5:  0.235,
+        7.0:  0.22,
+        6.5:  0.205,
+        6.0:  0.19,
     }
+
+    # 비고는 wrap 허용 — 긴 안내문구를 위한 max
+    NOTES_MAX = 3.0
 
     def _max_line_len(strings):
         m = 0
@@ -414,101 +415,66 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
                 m = max(m, len(ln))
         return m
 
-    # 핵심 컬럼(짧은 데이터) — 콘텐츠가 한 줄에 들어가도록 보장
-    one_line_keys = {"unit_price", "period", "qty", "discount", "amount"}
-
-    raw_widths = []
+    # 모든 컬럼의 콘텐츠 글자수 (헤더 포함) 미리 계산 — 폰트 시도 시 재사용
+    content_lens = []
     for c in active_cols:
-        key, header, base, _, getter, _, _ = c
-        content_strings = [str(getter(it)) for it in items] + [header]
-        content_len = _max_line_len(content_strings)
-        # 헤더가 한 줄에 잘리지 않고 들어갈 최소 너비
-        lo = max(len(header) * CHAR_CM + PAD_CM, MIN_SAFE_CM)
-        hi = max(max_by_key.get(key, base * 1.3), lo)
-        # 핵심 짧은 컬럼은 콘텐츠도 한 줄 보장 — lo 를 콘텐츠 폭까지 올림 (max 이내 cap)
-        if key in one_line_keys:
-            lo = min(max(lo, content_len * CHAR_CM + PAD_CM), hi)
-        # 콘텐츠 폭 + 패딩
-        raw = content_len * CHAR_CM + PAD_CM
-        raw_widths.append(min(max(raw, lo), hi))
+        _, header, _, _, getter, _, _ = c
+        content_lens.append(_max_line_len(
+            [str(getter(it)) for it in items] + [header]
+        ))
 
-    total = sum(raw_widths)
-    if total > USABLE_WIDTH:
-        # 사용 가능 폭 초과 — 핵심 컬럼/설명은 보존, 비고/항목에서 우선 양보
-        excess = total - USABLE_WIDTH
-        # 가중치 높을수록 더 많이 줄어듦. 설명·항목은 절대 안 줄어들도록 (한 줄 보장)
-        shrink_weights_by_key = {
-            "notes": 5.0,         # 비고가 가장 많이 양보 (보통 짧음)
-            # "name": 0 — 항목은 한 줄 보장
-            # "description": 0 — 설명도 한 줄 보장
-        }
-        weights = [shrink_weights_by_key.get(c[0], 0.0) for c in active_cols]
-        wsum = sum(weights)
-        if wsum > 0:
-            for i, wt in enumerate(weights):
-                if wt > 0:
-                    raw_widths[i] -= excess * wt / wsum
-            # 음수 방지 + 최소 보장
+    def _widths_for(char_cm: float) -> list[float]:
+        """주어진 글자 폭(=폰트 크기) 으로 콘텐츠 한 줄 보장 너비 계산.
+        비고는 NOTES_MAX 로 cap (wrap 허용)."""
+        out = []
+        for i, c in enumerate(active_cols):
+            key = c[0]
+            w = max(content_lens[i] * char_cm + PAD_CM, MIN_SAFE_CM)
+            if key == "notes":
+                w = min(w, NOTES_MAX)
+            out.append(w)
+        return out
+
+    # 큰 폰트부터 시도 — 사용 가능 폭 안에 들어가면 그 폰트 채택
+    chosen_font_pt = None
+    raw_widths = None
+    for font_pt in sorted(CHAR_CM_BY_PT.keys(), reverse=True):
+        w_list = _widths_for(CHAR_CM_BY_PT[font_pt])
+        if sum(w_list) <= USABLE_WIDTH:
+            chosen_font_pt = font_pt
+            raw_widths = w_list
+            break
+
+    if chosen_font_pt is None:
+        # 가장 작은 폰트로도 안 들어감 — 최소 폰트 + 비고/설명 차례로 양보
+        chosen_font_pt = min(CHAR_CM_BY_PT.keys())
+        raw_widths = _widths_for(CHAR_CM_BY_PT[chosen_font_pt])
+        excess = sum(raw_widths) - USABLE_WIDTH
+        # 1) 비고 먼저 양보
+        for i, c in enumerate(active_cols):
+            if c[0] == "notes":
+                give = min(excess, raw_widths[i] - 0.5)
+                raw_widths[i] -= give
+                excess -= give
+                break
+        # 2) 그래도 초과면 설명 양보 (한 줄 보장 깨질 수 있음)
+        if excess > 0:
             for i, c in enumerate(active_cols):
-                if c[0] in shrink_weights_by_key:
-                    raw_widths[i] = max(raw_widths[i], 1.4)
-            # 그래도 초과면 마지막 비례 축소 — 핵심 컬럼 모두 보호, '비고'만 축소
-            # 필수 불가결: 단가/기간/수량/할인/공급가 + 설명/항목 모두 한 줄 보장
-            new_total = sum(raw_widths)
-            if new_total > USABLE_WIDTH:
-                protected_keys = {"description", "name"} | one_line_keys
-                protected_sum = sum(
-                    raw_widths[i] for i, c in enumerate(active_cols)
-                    if c[0] in protected_keys
-                )
-                others_indices = [
-                    i for i, c in enumerate(active_cols)
-                    if c[0] not in protected_keys
-                ]
-                others_sum = sum(raw_widths[i] for i in others_indices)
-                target_others = USABLE_WIDTH - protected_sum
-                if others_sum > 0 and target_others > 0:
-                    scale = target_others / others_sum
-                    raw_widths = [
-                        w if i not in others_indices else max(w * scale, 0.5)
-                        for i, w in enumerate(raw_widths)
-                    ]
-                    # 클램프 후에도 초과면 설명에서 마지막으로 양보
-                    final_total = sum(raw_widths)
-                    if final_total > USABLE_WIDTH:
-                        desc_idx = next(
-                            (i for i, c in enumerate(active_cols) if c[0] == "description"),
-                            None,
-                        )
-                        if desc_idx is not None:
-                            extra = final_total - USABLE_WIDTH
-                            raw_widths[desc_idx] = max(
-                                raw_widths[desc_idx] - extra, 3.0
-                            )
-                else:
-                    # 보호 컬럼만으로 USABLE_WIDTH 초과 — 비고 활성 안 됐을 때
-                    # 설명만 마지막 보루로 줄임
-                    desc_idx = next(
-                        (i for i, c in enumerate(active_cols) if c[0] == "description"),
-                        None,
-                    )
-                    if desc_idx is not None:
-                        raw_widths[desc_idx] -= (new_total - USABLE_WIDTH)
-        else:
-            # 줄일 수 있는 컬럼이 없으면 비례 축소
-            scale = USABLE_WIDTH / total
-            raw_widths = [w * scale for w in raw_widths]
+                if c[0] == "description":
+                    raw_widths[i] = max(raw_widths[i] - excess, 3.0)
+                    break
     else:
-        # 남는 공간은 '긴' 컬럼(설명·항목·비고)에 강하게 가중 분배
-        slack_weights_by_key = {
-            "description": 4.0, "name": 1.0, "notes": 1.5,
-        }
-        weights = [slack_weights_by_key.get(c[0], 0.0) for c in active_cols]
-        wsum = sum(weights)
-        if wsum > 0:
-            slack = USABLE_WIDTH - total
-            raw_widths = [w + slack * wt / wsum
-                          for w, wt in zip(raw_widths, weights)]
+        # 남는 폭은 긴 컬럼(설명·항목·비고)에 가중 분배
+        slack = USABLE_WIDTH - sum(raw_widths)
+        if slack > 0.1:
+            slack_weights_by_key = {
+                "description": 4.0, "name": 1.5, "notes": 1.0,
+            }
+            weights = [slack_weights_by_key.get(c[0], 0.0) for c in active_cols]
+            wsum = sum(weights)
+            if wsum > 0:
+                raw_widths = [w + slack * wt / wsum
+                              for w, wt in zip(raw_widths, weights)]
 
     widths = [Cm(round(w, 2)) for w in raw_widths]
     headers = [c[1] for c in active_cols]
@@ -535,23 +501,24 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
         r = p.add_run(col_spec[1])
         _apply_font(r, font, size_pt=9.5, bold=True, color=RGBColor(0xFF, 0xFF, 0xFF))
 
-    # 데이터 행 — 폰트는 컬럼 너비 계산(CHAR_CM=0.25)에 맞춰 8.5pt 를 최대로 유지
-    # 항목 수가 많으면 폰트도 단계적으로 더 작게 + 행 높이로 한 장 자동 채움
+    # 폰트는 위 컬럼 너비 계산에서 결정된 chosen_font_pt 사용 — 한 줄 보장 우선
+    cell_font_pt = chosen_font_pt
+    # 행 높이는 항목 수 기반 (한 장 자동 채움)
     n_items = len(items)
     if n_items <= 4:
-        cell_font_pt, row_h_cm = 8.5, 1.8    # 행 높이로 시각적 채움
+        row_h_cm = 1.8
     elif n_items <= 7:
-        cell_font_pt, row_h_cm = 8.5, 1.3
+        row_h_cm = 1.3
     elif n_items <= 11:
-        cell_font_pt, row_h_cm = 8.5, 1.0
+        row_h_cm = 1.0
     elif n_items <= 15:
-        cell_font_pt, row_h_cm = 8.5, 0.8
+        row_h_cm = 0.85
     elif n_items <= 20:
-        cell_font_pt, row_h_cm = 8, 0.65
+        row_h_cm = 0.7
     elif n_items <= 26:
-        cell_font_pt, row_h_cm = 7.5, 0.55
+        row_h_cm = 0.55
     else:
-        cell_font_pt, row_h_cm = 7, 0.5
+        row_h_cm = 0.5
 
     for r_idx, item in enumerate(items, start=1):
         row_obj = table.rows[r_idx]

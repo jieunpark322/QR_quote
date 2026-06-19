@@ -198,45 +198,56 @@ def _compute_section_widths(section: MembershipSection,
 
     notes_len = _max_line_len([it.notes or "" for it in items] + ["비고"])
 
-    # 글자수 → cm 환산 (셀 패딩 고려한 여유 폭)
-    CHAR_CM = 0.25       # 한글 한 글자 폭 (8pt 기준 — 멤버십은 폰트가 더 작음)
-    PAD_CM = 0.45        # 셀 좌우 패딩 + 안전 여유
-    MIN_SAFE_CM = 1.1    # 모든 컬럼 최소 폭
+    # ── 콘텐츠 한 줄 보장 우선 — 안 들어가면 폰트 작게 시도 ──
+    PAD_CM = 0.4
+    MIN_SAFE_CM = 1.0
+    NOTES_MAX = 2.8
+    DETAIL_MAX = 7.5
+
+    CHAR_CM_BY_PT = {
+        8.5: 0.27, 8.0: 0.255, 7.5: 0.235,
+        7.0: 0.22, 6.5: 0.205, 6.0: 0.19,
+    }
 
     content_lens = [sec_len, cat_len, detail_len, period_len,
-                    unit_price_len, 4, amount_len, notes_len]  # 5: '40%' 정도
-    # 콘텐츠 글자수 + 패딩 (단어 끝까지 한 줄에 들어가도록)
-    raw = [n * CHAR_CM + PAD_CM for n in content_lens]
-    raw[2] = max(raw[2], detail_len * CHAR_CM + PAD_CM)  # 상세 구분은 줄바꿈 허용 가능
-
-    # 최소 폭: 헤더가 한 줄에 들어가는 너비 보장
+                    unit_price_len, 4, amount_len, notes_len]
     headers_for_min = ["구분", "분류", "상세 구분", "기간", "단가",
                        "할인", "금액", "비고"]
-    min_widths = [
-        max(len(h) * CHAR_CM + PAD_CM, MIN_SAFE_CM) for h in headers_for_min
-    ]
-    max_widths = [3.5, 3.0, 7.5, 1.8, 3.5, 2.0, 3.0, 3.5]
 
-    # 핵심 컬럼(구분/분류)은 셀 콘텐츠가 한 줄에 들어가도록 보장 — max로 cap
-    for idx in (0, 1):
-        wanted = content_lens[idx] * CHAR_CM + PAD_CM
-        min_widths[idx] = min(max(min_widths[idx], wanted), max_widths[idx])
-    # 기간/할인/금액도 짧은 데이터라 한 줄 보장 (max 이내)
-    for idx in (3, 5, 6):
-        wanted = content_lens[idx] * CHAR_CM + PAD_CM
-        min_widths[idx] = min(max(min_widths[idx], wanted), max_widths[idx])
+    def _widths_for(char_cm: float) -> list[float]:
+        out = []
+        for i, h in enumerate(headers_for_min):
+            w = max(
+                content_lens[i] * char_cm + PAD_CM,
+                len(h) * char_cm + PAD_CM,
+                MIN_SAFE_CM,
+            )
+            if i == 2:
+                w = min(w, DETAIL_MAX)
+            elif i == 7:
+                w = min(w, NOTES_MAX)
+            out.append(w)
+        return out
 
-    constrained = [
-        min(max(raw_w, min_widths[i]), max_widths[i])
-        for i, raw_w in enumerate(raw)
-    ]
+    # 큰 폰트부터 시도 — 사용 가능 폭에 들어가는 첫 폰트 채택
+    chosen_font_pt = None
+    constrained = None
+    for font_pt in sorted(CHAR_CM_BY_PT.keys(), reverse=True):
+        w_list = _widths_for(CHAR_CM_BY_PT[font_pt])
+        if sum(w_list) <= usable_cm:
+            chosen_font_pt = font_pt
+            constrained = w_list
+            break
+    if chosen_font_pt is None:
+        chosen_font_pt = min(CHAR_CM_BY_PT.keys())
+        constrained = _widths_for(CHAR_CM_BY_PT[chosen_font_pt])
 
-    # 합계가 사용 가능 폭을 넘으면 — 핵심 컬럼은 최소 폭 유지, 긴 컬럼(상세·비고)에서 양보
+    # 가장 작은 폰트로도 폭 초과면 비고·상세에서 추가 양보 (한 줄 보장 깨질 수 있음)
     total = sum(constrained)
     if total > usable_cm:
         excess = total - usable_cm
-        # 축소 우선순위 가중치 (상세 구분 > 비고 > 단가/금액 약간)
-        shrink_weights = [0.0, 0.0, 3.0, 0.0, 0.3, 0.0, 0.3, 1.5]
+        # 축소 우선순위 가중치 (비고 > 상세)
+        shrink_weights = [0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 3.0]
         sw_sum = sum(shrink_weights)
         if sw_sum > 0:
             constrained = [
