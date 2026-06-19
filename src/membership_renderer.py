@@ -294,10 +294,10 @@ def _render_title(doc, document: MembershipQuoteDocument,
                   scenario: MembershipScenario, brand: Brand) -> None:
     font = brand.branding.font_family
     primary = _hex_to_rgb(brand.branding.colors.primary)
-    suffix = f" ({scenario.name})" if scenario.name else ""
+    suffix = f" ({scenario.name})" if (scenario.name and scenario.name != "기본") else ""
     _add_paragraph(
         doc, f"{document.title}{suffix}",
-        font=font, size_pt=15, bold=True,
+        font=font, size_pt=12, bold=True,
         alignment=WD_ALIGN_PARAGRAPH.CENTER,
         color=primary, space_after_pt=1,
     )

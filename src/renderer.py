@@ -185,7 +185,7 @@ def _render_header(doc, brand: Brand, document: QuoteDocument,
     primary = _hex_to_rgb(brand.branding.colors.primary)
 
     title_text = labels.quote.title if document.document_type == "quote" else labels.contract.title
-    _add_paragraph(doc, title_text, font=font, size_pt=20, bold=True,
+    _add_paragraph(doc, title_text, font=font, size_pt=16, bold=True,
                    alignment=WD_ALIGN_PARAGRAPH.CENTER, color=primary, space_after_pt=4)
 
     # 발행자(좌)를 넓게, 발행정보(우)를 우측 끝으로 컴팩트하게
@@ -322,8 +322,8 @@ def _render_counterparty(doc, brand: Brand, document: QuoteDocument,
         _apply_font(r, font, size_pt=size, bold=bold)
 
     _add_paragraph(doc, f"{labels.quote.labels.subject_prefix}: {document.subject}",
-                   font=font, size_pt=10.5, bold=True,
-                   space_before_pt=14, space_after_pt=2)
+                   font=font, size_pt=9.5, bold=True,
+                   space_before_pt=12, space_after_pt=2)
 
 
 def _render_line_items(doc, brand: Brand, document: QuoteDocument,
