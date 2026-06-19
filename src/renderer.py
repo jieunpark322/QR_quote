@@ -392,15 +392,15 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
     PAD_CM = 0.6         # 셀 좌우 패딩 + 안전 여백
     MIN_SAFE_CM = 1.2    # 헤더 글자수와 무관하게 보장하는 최소 폭
 
-    # 컬럼 키별 max 범위 (lo 는 헤더가 한 줄에 들어갈 너비를 자동 계산)
+    # 컬럼 키별 max 범위 (lo 는 헤더+콘텐츠가 한 줄에 들어갈 너비를 자동 계산)
     max_by_key = {
         "name":        5.0,
-        "description": 6.0,   # 너무 넓어 여백 남는 문제로 8.5 → 6.0
-        "unit_price":  2.6,
-        "period":      2.0,
+        "description": 6.0,
+        "unit_price":  3.0,    # ₩X,XXX,XXX 7자리 + 패딩
+        "period":      2.2,    # '기간(횟수)' 6글자 헤더가 한 줄
         "qty":         1.5,
         "discount":    2.0,
-        "amount":      2.8,
+        "amount":      3.4,    # ₩XX,XXX,XXX 큰 금액 한 줄 (잘림 방지)
         "notes":       4.0,
     }
 
@@ -413,6 +413,9 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
                 m = max(m, len(ln))
         return m
 
+    # 핵심 컬럼(짧은 데이터) — 콘텐츠가 한 줄에 들어가도록 보장
+    one_line_keys = {"unit_price", "period", "qty", "discount", "amount"}
+
     raw_widths = []
     for c in active_cols:
         key, header, base, _, getter, _, _ = c
@@ -421,15 +424,39 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
         # 헤더가 한 줄에 잘리지 않고 들어갈 최소 너비
         lo = max(len(header) * CHAR_CM + PAD_CM, MIN_SAFE_CM)
         hi = max(max_by_key.get(key, base * 1.3), lo)
+        # 핵심 짧은 컬럼은 콘텐츠도 한 줄 보장 — lo 를 콘텐츠 폭까지 올림 (max 이내 cap)
+        if key in one_line_keys:
+            lo = min(max(lo, content_len * CHAR_CM + PAD_CM), hi)
         # 콘텐츠 폭 + 패딩
         raw = content_len * CHAR_CM + PAD_CM
         raw_widths.append(min(max(raw, lo), hi))
 
     total = sum(raw_widths)
     if total > USABLE_WIDTH:
-        # 비례 축소
-        scale = USABLE_WIDTH / total
-        raw_widths = [w * scale for w in raw_widths]
+        # 사용 가능 폭 초과 — 핵심 컬럼은 보존, 긴 컬럼(설명/항목/비고)에서 양보
+        excess = total - USABLE_WIDTH
+        shrink_weights_by_key = {
+            "description": 4.0, "name": 1.0, "notes": 2.0,
+        }
+        weights = [shrink_weights_by_key.get(c[0], 0.0) for c in active_cols]
+        wsum = sum(weights)
+        if wsum > 0:
+            for i, wt in enumerate(weights):
+                if wt > 0:
+                    raw_widths[i] -= excess * wt / wsum
+            # 음수 방지 + 최소 보장
+            for i, c in enumerate(active_cols):
+                if c[0] in shrink_weights_by_key:
+                    raw_widths[i] = max(raw_widths[i], 1.4)
+            # 그래도 초과면 마지막 비례 축소
+            new_total = sum(raw_widths)
+            if new_total > USABLE_WIDTH:
+                scale = USABLE_WIDTH / new_total
+                raw_widths = [w * scale for w in raw_widths]
+        else:
+            # 줄일 수 있는 컬럼이 없으면 비례 축소
+            scale = USABLE_WIDTH / total
+            raw_widths = [w * scale for w in raw_widths]
     else:
         # 남는 공간은 '긴' 컬럼(설명·항목·비고)에 강하게 가중 분배
         slack_weights_by_key = {
@@ -468,20 +495,23 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
         _apply_font(r, font, size_pt=9.5, bold=True, color=RGBColor(0xFF, 0xFF, 0xFF))
 
     # 데이터 행 — 음수 amount (할인) 은 빨간색 + 굵게 강조
-    # 1페이지 강제 + 적을 땐 알맞게 채우도록 항목 수별 자동 폰트·행높이
+    # 1페이지 강제 — 폰트는 최대 9pt 로 작게 유지하고 행 높이만 조정해서 채움
+    # (폰트를 키우면 컬럼 폭을 콘텐츠가 초과해 두 줄로 잘려서 안 됨)
     n_items = len(items)
     if n_items <= 3:
-        cell_font_pt, row_h_cm = 10.5, 1.5   # 1~3행: 한 장에 여유 → 크게
+        cell_font_pt, row_h_cm = 9, 2.0      # 행 높이만 크게 → 한 장 시각적 채움
     elif n_items <= 6:
-        cell_font_pt, row_h_cm = 10, 1.2
+        cell_font_pt, row_h_cm = 9, 1.5
     elif n_items <= 10:
-        cell_font_pt, row_h_cm = 9, 1.0
+        cell_font_pt, row_h_cm = 9, 1.1
     elif n_items <= 14:
-        cell_font_pt, row_h_cm = 8.5, 0.85
+        cell_font_pt, row_h_cm = 9, 0.85
     elif n_items <= 18:
-        cell_font_pt, row_h_cm = 8, 0.7
+        cell_font_pt, row_h_cm = 8.5, 0.7
     elif n_items <= 22:
-        cell_font_pt, row_h_cm = 7.5, 0.6
+        cell_font_pt, row_h_cm = 8, 0.6
+    elif n_items <= 28:
+        cell_font_pt, row_h_cm = 7.5, 0.55
     else:
         cell_font_pt, row_h_cm = 7, 0.5
 
