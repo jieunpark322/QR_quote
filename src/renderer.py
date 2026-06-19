@@ -470,9 +470,21 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
                 if others_sum > 0 and target_others > 0:
                     scale = target_others / others_sum
                     raw_widths = [
-                        w if i not in others_indices else max(w * scale, 0.8)
+                        w if i not in others_indices else max(w * scale, 0.5)
                         for i, w in enumerate(raw_widths)
                     ]
+                    # 클램프 후에도 초과면 설명에서 마지막으로 양보
+                    final_total = sum(raw_widths)
+                    if final_total > USABLE_WIDTH:
+                        desc_idx = next(
+                            (i for i, c in enumerate(active_cols) if c[0] == "description"),
+                            None,
+                        )
+                        if desc_idx is not None:
+                            extra = final_total - USABLE_WIDTH
+                            raw_widths[desc_idx] = max(
+                                raw_widths[desc_idx] - extra, 3.0
+                            )
                 else:
                     # 보호 컬럼만으로 USABLE_WIDTH 초과 — 비고 활성 안 됐을 때
                     # 설명만 마지막 보루로 줄임
