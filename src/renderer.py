@@ -492,7 +492,7 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
 
     # 헤더 행
     header_row = table.rows[0]
-    header_row.height = Cm(0.8)
+    header_row.height = Cm(0.6)
     header_row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
     for idx, (col_spec, width) in enumerate(zip(active_cols, widths)):
         cell = header_row.cells[idx]
@@ -504,7 +504,7 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(0)
         r = p.add_run(col_spec[1])
-        _apply_font(r, font, size_pt=9.5, bold=True, color=RGBColor(0xFF, 0xFF, 0xFF))
+        _apply_font(r, font, size_pt=8, bold=True, color=RGBColor(0xFF, 0xFF, 0xFF))
 
     # 폰트는 위 컬럼 너비 계산에서 결정된 chosen_font_pt 사용 — 한 줄 보장 우선
     cell_font_pt = chosen_font_pt
@@ -628,7 +628,7 @@ def _render_totals(doc, brand: Brand, document: QuoteDocument,
             lp.paragraph_format.space_before = Pt(0)
             lp.paragraph_format.space_after = Pt(0)
             lr = lp.add_run(label)
-            _apply_font(lr, font, size_pt=10, bold=highlight,
+            _apply_font(lr, font, size_pt=8.5, bold=highlight,
                         color=RGBColor(0xFF, 0xFF, 0xFF) if highlight else None)
             # 값 (우측 정렬)
             vp = value_cell.paragraphs[0]
@@ -636,7 +636,7 @@ def _render_totals(doc, brand: Brand, document: QuoteDocument,
             vp.paragraph_format.space_before = Pt(0)
             vp.paragraph_format.space_after = Pt(0)
             vr = vp.add_run(value)
-            _apply_font(vr, font, size_pt=11 if highlight else 10, bold=highlight,
+            _apply_font(vr, font, size_pt=9.5 if highlight else 8.5, bold=highlight,
                         color=RGBColor(0xFF, 0xFF, 0xFF) if highlight else None)
         return
 
