@@ -327,7 +327,8 @@ def _render_counterparty(doc, brand: Brand, document: QuoteDocument,
 
 
 def _render_line_items(doc, brand: Brand, document: QuoteDocument,
-                       labels: DocumentLabels) -> None:
+                       labels: DocumentLabels) -> list | None:
+    """품목 표 렌더링. 합계 표가 동일 컬럼 구조로 정렬할 수 있도록 widths 를 반환."""
     font = brand.branding.font_family
     primary_hex = brand.branding.colors.primary.lstrip("#")
     ql = labels.quote
@@ -387,15 +388,15 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
     ]
 
     # 콘텐츠 길이 기반 컬럼 너비 — 짧은 컬럼은 좁게, 긴(설명·항목·비고) 컬럼은 넓게
-    USABLE_WIDTH = 19.0  # 견적서 좌우 여백 1.0cm 가정 — 설명 컬럼 한 줄 확보
-    CHAR_CM = 0.28       # 한글 한 글자 대략 폭 (셀 padding 고려해 여유)
-    PAD_CM = 0.6         # 셀 좌우 패딩 + 안전 여백
-    MIN_SAFE_CM = 1.2    # 헤더 글자수와 무관하게 보장하는 최소 폭
+    USABLE_WIDTH = 19.0  # 견적서 좌우 여백 1.0cm 가정
+    CHAR_CM = 0.25       # 한글 한 글자 폭 (8.5pt 기준으로 더 좁게 잡아 빈 공간 줄임)
+    PAD_CM = 0.45        # 셀 좌우 패딩 + 안전 여유
+    MIN_SAFE_CM = 1.1    # 헤더 글자수와 무관하게 보장하는 최소 폭
 
     # 컬럼 키별 max 범위 (lo 는 헤더+콘텐츠가 한 줄에 들어갈 너비를 자동 계산)
     max_by_key = {
-        "name":        3.5,    # 항목명은 1~2단어 위주
-        "description": 7.5,    # 설명이 가장 우선 — 넓게
+        "name":        4.5,    # 항목 한 줄 보장 위해 확대
+        "description": 7.5,    # 설명이 가장 우선
         "unit_price":  3.0,
         "period":      2.2,
         "qty":         1.5,
@@ -451,25 +452,26 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
             for i, c in enumerate(active_cols):
                 if c[0] in shrink_weights_by_key:
                     raw_widths[i] = max(raw_widths[i], 1.4)
-            # 그래도 초과면 마지막 비례 축소 — 단, 설명 컬럼은 제외 (한 줄 보장)
+            # 그래도 초과면 마지막 비례 축소 — 설명·항목 보호, 비고/금액 위주로 축소
             new_total = sum(raw_widths)
             if new_total > USABLE_WIDTH:
-                desc_idx = next(
-                    (i for i, c in enumerate(active_cols) if c[0] == "description"),
-                    None,
+                protected_keys = {"description", "name"}
+                protected_sum = sum(
+                    raw_widths[i] for i, c in enumerate(active_cols)
+                    if c[0] in protected_keys
                 )
-                if desc_idx is not None:
-                    others_sum = sum(w for i, w in enumerate(raw_widths) if i != desc_idx)
-                    target_others = USABLE_WIDTH - raw_widths[desc_idx]
-                    if others_sum > 0 and target_others > 0:
-                        scale = target_others / others_sum
-                        raw_widths = [
-                            w if i == desc_idx else max(w * scale, 1.2)
-                            for i, w in enumerate(raw_widths)
-                        ]
-                    else:
-                        scale = USABLE_WIDTH / new_total
-                        raw_widths = [w * scale for w in raw_widths]
+                others_indices = [
+                    i for i, c in enumerate(active_cols)
+                    if c[0] not in protected_keys
+                ]
+                others_sum = sum(raw_widths[i] for i in others_indices)
+                target_others = USABLE_WIDTH - protected_sum
+                if others_sum > 0 and target_others > 0:
+                    scale = target_others / others_sum
+                    raw_widths = [
+                        w if i not in others_indices else max(w * scale, 1.0)
+                        for i, w in enumerate(raw_widths)
+                    ]
                 else:
                     scale = USABLE_WIDTH / new_total
                     raw_widths = [w * scale for w in raw_widths]
@@ -577,9 +579,14 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
                             bold=cell_in_disc,
                             color=DISCOUNT_COLOR if cell_in_disc else None)
 
+    return widths
+
 
 def _render_totals(doc, brand: Brand, document: QuoteDocument,
-                   labels: DocumentLabels) -> None:
+                   labels: DocumentLabels,
+                   item_table_widths: list | None = None) -> None:
+    """합계 표를 품목 표와 동일한 컬럼 구조 + 가로 병합으로 만들어
+    세로 선이 정확히 정렬되도록 한다."""
     font = brand.branding.font_family
     primary = _hex_to_rgb(brand.branding.colors.primary)
     t = document.totals
@@ -600,6 +607,50 @@ def _render_totals(doc, brand: Brand, document: QuoteDocument,
         (ql.total, _format_money(t.total, currency), True),
     ])
 
+    # 품목 표 widths 가 있으면 동일 컬럼 구조 + 라벨/값 가로 병합 → 세로 선 정렬
+    if item_table_widths and len(item_table_widths) >= 2:
+        n_cols = len(item_table_widths)
+        # 값 컬럼은 마지막 1개 (공급가)만 차지. 라벨은 나머지 전부.
+        value_col_count = 1
+        label_col_count = n_cols - value_col_count
+        table = doc.add_table(rows=len(rows), cols=n_cols)
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        _set_table_borders(table, color="9FB0CC", size=4)
+        _force_fixed_column_widths(table, item_table_widths)
+        for idx, (label, value, highlight) in enumerate(rows):
+            row_obj = table.rows[idx]
+            row_obj.height = Cm(0.75 if highlight else 0.65)
+            row_obj.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+            # 라벨 셀: col 0 ~ (label_col_count-1) 병합
+            label_cell = row_obj.cells[0]
+            for j in range(1, label_col_count):
+                label_cell = label_cell.merge(row_obj.cells[j])
+            # 값 셀: 마지막 컬럼 (이미 단일이라 별도 merge 불필요)
+            value_cell = row_obj.cells[label_col_count]
+            _vcenter(label_cell)
+            _vcenter(value_cell)
+            if highlight:
+                _set_cell_bg(label_cell, brand.branding.colors.primary.lstrip("#"))
+                _set_cell_bg(value_cell, brand.branding.colors.primary.lstrip("#"))
+            # 라벨 (우측 정렬)
+            lp = label_cell.paragraphs[0]
+            lp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            lp.paragraph_format.space_before = Pt(0)
+            lp.paragraph_format.space_after = Pt(0)
+            lr = lp.add_run(label)
+            _apply_font(lr, font, size_pt=10, bold=highlight,
+                        color=RGBColor(0xFF, 0xFF, 0xFF) if highlight else None)
+            # 값 (우측 정렬)
+            vp = value_cell.paragraphs[0]
+            vp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            vp.paragraph_format.space_before = Pt(0)
+            vp.paragraph_format.space_after = Pt(0)
+            vr = vp.add_run(value)
+            _apply_font(vr, font, size_pt=11 if highlight else 10, bold=highlight,
+                        color=RGBColor(0xFF, 0xFF, 0xFF) if highlight else None)
+        return
+
+    # 폴백 — 품목 표 widths 가 없는 경우 (계약서 등) 기존 2컬럼 방식
     table = doc.add_table(rows=len(rows), cols=2)
     table.alignment = WD_TABLE_ALIGNMENT.RIGHT
     _set_table_borders(table, color="9FB0CC", size=4)
@@ -892,8 +943,9 @@ def render_docx(brand: Brand, document: QuoteDocument, project_root: Path,
     else:
         _render_header(doc, brand, document, labels)
         _render_counterparty(doc, brand, document, labels)
-        _render_line_items(doc, brand, document, labels)
-        _render_totals(doc, brand, document, labels)
+        item_widths = _render_line_items(doc, brand, document, labels)
+        _render_totals(doc, brand, document, labels,
+                       item_table_widths=item_widths)
         _render_etc_notice(doc, brand, document, labels)
         _render_clauses(doc, brand, document, project_root)
         _render_signature(doc, brand, document, labels)
