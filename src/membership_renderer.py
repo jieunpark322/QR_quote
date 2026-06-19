@@ -722,15 +722,15 @@ def _render_section_table(doc, section: MembershipSection, brand: Brand) -> None
             _fill_cell(table.cell(r, 1), "", font=font,
                        bg=DISCOUNT_BG if cat_is_discount else None)
             label_cell = table.cell(r, 2).merge(table.cell(r, 5))
-            _fill_cell(label_cell, label, font=font, size_pt=8, bold=True,
+            _fill_cell(label_cell, label, font=font, size_pt=7, bold=True,
                        align=WD_ALIGN_PARAGRAPH.RIGHT,
                        bg=sub_bg, color=sub_color)
             _fill_cell(table.cell(r, 6),
                        _money(subtotal) if subtotal else "-",
-                       font=font, size_pt=8.5, bold=True,
+                       font=font, size_pt=7, bold=True,
                        align=WD_ALIGN_PARAGRAPH.RIGHT,
                        bg=sub_bg, color=sub_color)
-            _fill_cell(table.cell(r, 7), "-", font=font, size_pt=8,
+            _fill_cell(table.cell(r, 7), "-", font=font, size_pt=7,
                        align=WD_ALIGN_PARAGRAPH.CENTER,
                        bg=sub_bg, color=sub_color)
             r += 1
@@ -754,14 +754,14 @@ def _render_section_table(doc, section: MembershipSection, brand: Brand) -> None
         section_total_row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
         _fill_cell(table.cell(r, 0), "", font=font, bg=light_bg)
         _fill_cell(table.cell(r, 1), "예상 총 금액",
-                   font=font, size_pt=8, bold=True,
+                   font=font, size_pt=7, bold=True,
                    align=WD_ALIGN_PARAGRAPH.CENTER,
                    bg=brand.branding.colors.primary.lstrip("#"),
                    color=RGBColor(0xFF, 0xFF, 0xFF))
         # col 2~7 가로 병합해서 넓은 한 셀로
         merged_cell = table.cell(r, 2).merge(table.cell(r, 7))
         _fill_cell(merged_cell, total_text,
-                   font=font, size_pt=9, bold=True,
+                   font=font, size_pt=7.5, bold=True,
                    align=WD_ALIGN_PARAGRAPH.LEFT, bg=light_bg)
         r += 1
 
@@ -924,11 +924,11 @@ def _render_grand_total(doc, scenario: MembershipScenario,
         p.paragraph_format.space_before = Pt(4 if idx == 0 else 0)
         p.paragraph_format.space_after = Pt(0)
         r_label = p.add_run(f"{label}  ")
-        _apply_font(r_label, font, size_pt=9, bold=True,
+        _apply_font(r_label, font, size_pt=7, bold=True,
                     color=primary if highlight else None)
         r_value = p.add_run(value)
         _apply_font(r_value, font,
-                    size_pt=10 if highlight else 9,
+                    size_pt=8 if highlight else 7,
                     bold=True,
                     color=primary if highlight else None)
 

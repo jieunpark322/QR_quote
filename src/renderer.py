@@ -628,7 +628,7 @@ def _render_totals(doc, brand: Brand, document: QuoteDocument,
             lp.paragraph_format.space_before = Pt(0)
             lp.paragraph_format.space_after = Pt(0)
             lr = lp.add_run(label)
-            _apply_font(lr, font, size_pt=8.5, bold=highlight,
+            _apply_font(lr, font, size_pt=7, bold=highlight,
                         color=RGBColor(0xFF, 0xFF, 0xFF) if highlight else None)
             # 값 (우측 정렬)
             vp = value_cell.paragraphs[0]
@@ -636,7 +636,7 @@ def _render_totals(doc, brand: Brand, document: QuoteDocument,
             vp.paragraph_format.space_before = Pt(0)
             vp.paragraph_format.space_after = Pt(0)
             vr = vp.add_run(value)
-            _apply_font(vr, font, size_pt=9.5 if highlight else 8.5, bold=highlight,
+            _apply_font(vr, font, size_pt=8 if highlight else 7, bold=highlight,
                         color=RGBColor(0xFF, 0xFF, 0xFF) if highlight else None)
         return
 
