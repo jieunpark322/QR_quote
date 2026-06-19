@@ -91,6 +91,16 @@ MC_HISTORY_DIR = PROJECT_ROOT / "output" / "_history" / "mc"
 MC_TEMPLATE_DIR = PROJECT_ROOT / "output" / "_templates" / "mc"
 HISTORY_LIMIT = 10
 
+# 저장/표시 시각은 한국 표준시(KST, UTC+9) 기준 — Streamlit Cloud 가 UTC 라
+# datetime.now() 결과를 그대로 쓰면 9시간 어긋남
+from datetime import timezone, timedelta as _timedelta
+KST = timezone(_timedelta(hours=9))
+
+
+def _now_kst():
+    from datetime import datetime
+    return datetime.now(KST)
+
 # 자동 저장/복원할 위젯 키들
 QR_FORM_KEYS = [
     "issuer_name", "issuer_phone", "issuer_title", "issuer_email",
@@ -262,11 +272,11 @@ def _qr_save_history(snapshot: dict, document_id: str) -> None:
         except OSError:
             pass
 
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    ts = _now_kst().strftime("%Y%m%d_%H%M%S")
     payload = {
         **snapshot,
         "_document_id": document_id,
-        "_saved_at": datetime.now().isoformat(timespec="seconds"),
+        "_saved_at": _now_kst().isoformat(timespec="seconds"),
         "_subject": st.session_state.get("subject", ""),
         "_cp_name": st.session_state.get("cp_name", ""),
     }
@@ -307,7 +317,7 @@ def _qr_save_template(name: str, snapshot: dict) -> bool:
     payload = {
         **snapshot,
         "_template_name": name,
-        "_saved_at": datetime.now().isoformat(timespec="seconds"),
+        "_saved_at": _now_kst().isoformat(timespec="seconds"),
     }
     path = QR_TEMPLATE_DIR / f"{safe}.json"
     _write_json_safe(path, payload)
@@ -380,14 +390,14 @@ def _mc_save_history(snapshot: dict, document_id: str) -> None:
             old.unlink(missing_ok=True)
         except OSError:
             pass
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    ts = _now_kst().strftime("%Y%m%d_%H%M%S")
     doc = (snapshot.get("mc_doc") or {})
     cp_name = (doc.get("counterparty") or {}).get("name") or ""
     title = doc.get("title") or "멤버십 클라우드 견적서"
     payload = {
         **snapshot,
         "_document_id": document_id,
-        "_saved_at": datetime.now().isoformat(timespec="seconds"),
+        "_saved_at": _now_kst().isoformat(timespec="seconds"),
         "_subject": title,
         "_cp_name": cp_name,
     }
@@ -427,7 +437,7 @@ def _mc_save_template(name: str, snapshot: dict) -> bool:
     payload = {
         **snapshot,
         "_template_name": name,
-        "_saved_at": datetime.now().isoformat(timespec="seconds"),
+        "_saved_at": _now_kst().isoformat(timespec="seconds"),
     }
     path = MC_TEMPLATE_DIR / f"{safe}.json"
     _write_json_safe(path, payload)
@@ -1205,35 +1215,63 @@ def render_quote_page():
         if changed:
             st.rerun()
 
-        # ── 할인 행 음영 미리보기 (분류=할인인 행만 빨강 박스에 다시 표시) ──
+        # ── 할인 적용 미리보기 — 분류=할인행 + 항목별 할인 행 둘 다 ──
         disc_mask = edited_df["분류"].astype(str) == ITEM_KIND_DISCOUNT
-        disc_rows = edited_df[disc_mask]
-        if not disc_rows.empty:
-            disc_amounts = disc_rows.apply(
+        # 항목별 할인 (할인율 또는 할인금액 > 0)
+        item_disc_mask = (
+            (pd.to_numeric(edited_df["할인율(%)"], errors="coerce").fillna(0) > 0)
+            | (pd.to_numeric(edited_df["할인금액"], errors="coerce").fillna(0) > 0)
+        ) & ~disc_mask
+        combined_mask = disc_mask | item_disc_mask
+        any_rows = edited_df[combined_mask]
+        if not any_rows.empty:
+            disc_amounts = edited_df[disc_mask].apply(
                 lambda r: _row_amount(r, df=edited_df), axis=1
             )
-            disc_total = int(pd.to_numeric(disc_amounts, errors="coerce").fillna(0).sum())
+            disc_total_row = int(pd.to_numeric(disc_amounts, errors="coerce").fillna(0).sum())
+            # 항목별 할인 차감 합 계산
+            item_disc_total = 0
+            for _, r in edited_df[item_disc_mask].iterrows():
+                price = r.get("단가")
+                if not (pd.notna(price) and price):
+                    continue
+                try:
+                    q = int(r.get("수량") or 1) or 1
+                    p = int(r.get("기간(횟수)") or 1) or 1
+                    gross = int(price) * q * p
+                except (TypeError, ValueError):
+                    continue
+                d_amt = r.get("할인금액")
+                d_rate = r.get("할인율(%)")
+                if pd.notna(d_amt) and d_amt:
+                    item_disc_total += int(d_amt)
+                elif pd.notna(d_rate) and d_rate:
+                    item_disc_total += int(round(gross * float(d_rate) / 100))
+            total_disc = abs(disc_total_row) + item_disc_total
             st.markdown(
                 f"""
 <div style="background:#FDECEA; border-left:4px solid #C0392B;
             border-radius:6px; padding:10px 14px; margin:6px 0 4px;">
   <div style="color:#C0392B; font-weight:700; font-size:0.95rem;">
-    💰 할인 적용 내역 · {len(disc_rows)}건 · 차감 합계 <span style="font-size:1.05rem">₩{abs(disc_total):,}</span>
+    💰 할인 적용 내역 · {len(any_rows)}건 · 차감 합계 <span style="font-size:1.05rem">₩{total_disc:,}</span>
   </div>
   <div style="color:#7B241C; font-size:0.82rem; margin-top:3px;">
-    아래 행은 할인 분류로 분류된 행입니다. PDF에서도 빨강으로 음영·강조 표시됩니다.
+    아래 행에 할인이 적용되었습니다. PDF에서도 해당 행/할인 셀이 연한 빨강으로 음영 강조됩니다.
   </div>
 </div>
                 """,
                 unsafe_allow_html=True,
             )
-            disc_preview = disc_rows[["항목", "설명", "단가", "공급가", "비고"]].copy()
+            preview_cols = ["분류", "항목", "단가", "할인율(%)", "할인금액", "공급가", "비고"]
+            disc_preview = any_rows[preview_cols].copy()
             st.dataframe(
                 disc_preview,
                 hide_index=True,
                 use_container_width=True,
                 column_config={
                     "단가": st.column_config.NumberColumn("단가", format="₩%,d"),
+                    "할인율(%)": st.column_config.NumberColumn("할인율(%)", format="%d%%"),
+                    "할인금액": st.column_config.NumberColumn("할인금액", format="₩%,d"),
                     "공급가": st.column_config.NumberColumn("공급가", format="₩%,d"),
                 },
             )

@@ -540,13 +540,24 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
         row_obj.height = Cm(row_h_cm)
         row_obj.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
         is_discount = (item.amount or 0) < 0 or (item.unit_price or 0) < 0
+        # 항목별 할인이 있는 일반 품목 행 — 할인 셀만 별도로 음영 강조
+        item_has_disc = (
+            (item.discount_amount and item.discount_amount > 0)
+            or (item.discount_rate and item.discount_rate > 0)
+        )
         for c_idx, (col_spec, width) in enumerate(zip(active_cols, widths)):
+            col_key = col_spec[0]
             _, _, _, align, getter, _, _ = col_spec
             cell = row_obj.cells[c_idx]
             cell.width = width
             _vcenter(cell)
+            # 음영 처리:
+            #  - 할인 분류 행: 전체 셀 음영
+            #  - 일반 품목 + 항목별 할인 입력: 그 행의 '할인' 셀만 음영
             if is_discount:
-                _set_cell_bg(cell, "FDECEA")  # 연한 빨강 배경
+                _set_cell_bg(cell, "FDECEA")
+            elif item_has_disc and col_key == "discount":
+                _set_cell_bg(cell, "FDECEA")
             text_val = getter(item) or ""
             lines = str(text_val).split("\n") if text_val else [""]
             for ln_idx, ln in enumerate(lines):
@@ -558,9 +569,13 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
                 p.paragraph_format.space_before = Pt(0)
                 p.paragraph_format.space_after = Pt(0)
                 run = p.add_run(ln)
+                # 음영 처리한 할인 셀은 글자도 빨강+굵게
+                cell_in_disc = is_discount or (
+                    item_has_disc and col_key == "discount"
+                )
                 _apply_font(run, font, size_pt=cell_font_pt,
-                            bold=is_discount,
-                            color=DISCOUNT_COLOR if is_discount else None)
+                            bold=cell_in_disc,
+                            color=DISCOUNT_COLOR if cell_in_disc else None)
 
 
 def _render_totals(doc, brand: Brand, document: QuoteDocument,
