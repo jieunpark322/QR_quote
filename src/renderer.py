@@ -387,10 +387,10 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
         if c[5] or (c[6] is not None and c[6](items))
     ]
 
-    # 콘텐츠 길이 기반 컬럼 너비 — 짧은 컬럼은 좁게, 긴(설명·항목·비고) 컬럼은 넓게
+    # 콘텐츠 길이 기반 컬럼 너비
     USABLE_WIDTH = 19.0  # 견적서 좌우 여백 1.0cm 가정
-    CHAR_CM = 0.25       # 한글 한 글자 폭 (8.5pt 기준으로 더 좁게 잡아 빈 공간 줄임)
-    PAD_CM = 0.45        # 셀 좌우 패딩 + 안전 여유
+    CHAR_CM = 0.27       # 한글 한 글자 폭 (8.5pt 폰트 정확 측정값)
+    PAD_CM = 0.5         # 셀 좌우 패딩 + 안전 여유
     MIN_SAFE_CM = 1.1    # 헤더 글자수와 무관하게 보장하는 최소 폭
 
     # 컬럼 키별 max 범위 (lo 는 헤더+콘텐츠가 한 줄에 들어갈 너비를 자동 계산)
@@ -452,10 +452,11 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
             for i, c in enumerate(active_cols):
                 if c[0] in shrink_weights_by_key:
                     raw_widths[i] = max(raw_widths[i], 1.4)
-            # 그래도 초과면 마지막 비례 축소 — 설명·항목 보호, 비고/금액 위주로 축소
+            # 그래도 초과면 마지막 비례 축소 — 핵심 컬럼 모두 보호, '비고'만 축소
+            # 필수 불가결: 단가/기간/수량/할인/공급가 + 설명/항목 모두 한 줄 보장
             new_total = sum(raw_widths)
             if new_total > USABLE_WIDTH:
-                protected_keys = {"description", "name"}
+                protected_keys = {"description", "name"} | one_line_keys
                 protected_sum = sum(
                     raw_widths[i] for i, c in enumerate(active_cols)
                     if c[0] in protected_keys
@@ -469,12 +470,18 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
                 if others_sum > 0 and target_others > 0:
                     scale = target_others / others_sum
                     raw_widths = [
-                        w if i not in others_indices else max(w * scale, 1.0)
+                        w if i not in others_indices else max(w * scale, 0.8)
                         for i, w in enumerate(raw_widths)
                     ]
                 else:
-                    scale = USABLE_WIDTH / new_total
-                    raw_widths = [w * scale for w in raw_widths]
+                    # 보호 컬럼만으로 USABLE_WIDTH 초과 — 비고 활성 안 됐을 때
+                    # 설명만 마지막 보루로 줄임
+                    desc_idx = next(
+                        (i for i, c in enumerate(active_cols) if c[0] == "description"),
+                        None,
+                    )
+                    if desc_idx is not None:
+                        raw_widths[desc_idx] -= (new_total - USABLE_WIDTH)
         else:
             # 줄일 수 있는 컬럼이 없으면 비례 축소
             scale = USABLE_WIDTH / total
