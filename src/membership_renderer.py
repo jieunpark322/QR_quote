@@ -310,8 +310,162 @@ def _render_title(doc, document: MembershipQuoteDocument,
         )
 
 
+def _render_header_qr_style(doc, document: MembershipQuoteDocument,
+                            brand: Brand) -> None:
+    """QR 견적서와 동일한 헤더 — 좌: 회사정보, 우: 발급정보 (발행일/담당자)."""
+    font = brand.branding.font_family
+    primary = _hex_to_rgb(brand.branding.colors.primary)
+
+    # 제목
+    _add_paragraph(doc, document.title, font=font, size_pt=14, bold=True,
+                   alignment=WD_ALIGN_PARAGRAPH.CENTER, color=primary,
+                   space_after_pt=3)
+
+    # 좌:회사정보 (넓게) | 우:발급정보 (컴팩트)
+    LEFT_W = Cm(11.5)
+    RIGHT_W = Cm(6.5)
+    info_table = doc.add_table(rows=1, cols=2)
+    info_table.autofit = False
+    info_table.alignment = WD_TABLE_ALIGNMENT.LEFT
+    info_table.columns[0].width = LEFT_W
+    info_table.columns[1].width = RIGHT_W
+    info_table.rows[0].height = Cm(3.0)
+    info_table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+
+    left, right = info_table.rows[0].cells
+    left.width = LEFT_W
+    right.width = RIGHT_W
+    _vcenter(left)
+    _vcenter(right)
+
+    # 좌측: 회사명 + 회사 정보
+    p = left.paragraphs[0]
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after = Pt(1)
+    p.paragraph_format.left_indent = Cm(0)
+    run = p.add_run(brand.company.name_ko)
+    _apply_font(run, font, size_pt=11, bold=True, color=primary)
+    info_lines = [
+        f"사업자등록번호: {brand.company.registration_number}",
+        f"대표자: {brand.company.ceo}",
+    ]
+    if brand.company.address:
+        info_lines.append(brand.company.address)
+    for line in info_lines:
+        para = left.add_paragraph()
+        para.paragraph_format.space_before = Pt(0)
+        para.paragraph_format.space_after = Pt(0)
+        para.paragraph_format.left_indent = Cm(0)
+        r = para.add_run(line)
+        _apply_font(r, font, size_pt=8.5)
+
+    # 우측: 발행일 + 담당자 정보 (라벨 + 값 2컬럼 inner 표)
+    info_rows = [("발행일", document.issued_date.isoformat())]
+    cpn = brand.contact_person
+    if cpn:
+        label = cpn.name + (f" ({cpn.title})" if cpn.title else "")
+        info_rows.append(("담당자", label))
+        info_rows.append(("연락처", cpn.phone or brand.company.phone or "-"))
+        info_rows.append(("Email", cpn.email or brand.company.email or "-"))
+    else:
+        info_rows.append(("연락처", brand.company.phone or "-"))
+        info_rows.append(("Email", brand.company.email or "-"))
+
+    inner = right.add_table(rows=len(info_rows), cols=2)
+    inner.autofit = False
+    inner.alignment = WD_TABLE_ALIGNMENT.RIGHT
+    LABEL_W = Cm(1.5)
+    VALUE_W = Cm(4.8)
+    inner.columns[0].width = LABEL_W
+    inner.columns[1].width = VALUE_W
+    for idx, (label, value) in enumerate(info_rows):
+        row_obj = inner.rows[idx]
+        row_obj.height = Cm(0.6)
+        row_obj.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+        lc, vc = row_obj.cells
+        lc.width = LABEL_W
+        vc.width = VALUE_W
+        _vcenter(lc)
+        _vcenter(vc)
+        _set_cell_bg(lc, "F0F2F8")
+        lp = lc.paragraphs[0]
+        lp.paragraph_format.space_before = Pt(0)
+        lp.paragraph_format.space_after = Pt(0)
+        lr = lp.add_run(label)
+        _apply_font(lr, font, size_pt=8.5, bold=True)
+        vp = vc.paragraphs[0]
+        vp.paragraph_format.space_before = Pt(0)
+        vp.paragraph_format.space_after = Pt(0)
+        vr = vp.add_run(value)
+        _apply_font(vr, font, size_pt=8.5)
+
+
+def _render_counterparty_qr_style(doc, document: MembershipQuoteDocument,
+                                   brand: Brand) -> None:
+    """QR 견적서 스타일 — 제휴사(수신처) 박스 + 건명."""
+    font = brand.branding.font_family
+    primary = _hex_to_rgb(brand.branding.colors.primary)
+
+    _add_paragraph(doc, "수 신",
+                   font=font, size_pt=10, bold=True,
+                   color=primary, space_before_pt=14, space_after_pt=2)
+
+    cp = document.counterparty
+    table = doc.add_table(rows=1, cols=1)
+    cell = table.rows[0].cells[0]
+    _vcenter(cell)
+    _set_cell_bg(cell, "FAFBFD")
+
+    lines = [(cp.name, True, 11)]
+    if cp.address:
+        lines.append((f"주소: {cp.address}", False, 8.5))
+    if cp.ceo:
+        lines.append((f"대표이사: {cp.ceo}", False, 8.5))
+    contact_bits = []
+    if cp.contact:
+        contact_bits.append(f"담당: {cp.contact}")
+    if cp.contact_phone:
+        contact_bits.append(f"연락처: {cp.contact_phone}")
+    if cp.contact_email:
+        contact_bits.append(f"Email: {cp.contact_email}")
+    if contact_bits:
+        lines.append(("  |  ".join(contact_bits), False, 8.5))
+
+    first = cell.paragraphs[0]
+    first.paragraph_format.space_after = Pt(1)
+    fr = first.add_run(lines[0][0])
+    _apply_font(fr, font, size_pt=lines[0][2], bold=lines[0][1])
+    for text, bold, size in lines[1:]:
+        para = cell.add_paragraph()
+        para.paragraph_format.space_after = Pt(0)
+        r = para.add_run(text)
+        _apply_font(r, font, size_pt=size, bold=bold)
+
+
+def _render_signature_qr_style(doc, document: MembershipQuoteDocument,
+                                brand: Brand) -> None:
+    """QR 견적서와 동일한 서명 — 날짜 + 회사명 가운데 정렬."""
+    font = brand.branding.font_family
+    primary = _hex_to_rgb(brand.branding.colors.primary)
+
+    _add_paragraph(doc, document.issued_date.strftime("%Y년 %m월 %d일"),
+                   font=font, size_pt=11,
+                   alignment=WD_ALIGN_PARAGRAPH.CENTER,
+                   space_before_pt=24, space_after_pt=8)
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_after = Pt(0)
+    r = p.add_run(brand.company.name_ko)
+    _apply_font(r, font, size_pt=14, bold=True, color=primary)
+    if brand.footer_text:
+        _add_paragraph(doc, brand.footer_text, font=font, size_pt=8.5,
+                       alignment=WD_ALIGN_PARAGRAPH.CENTER,
+                       color=RGBColor(0x88, 0x88, 0x88),
+                       space_before_pt=8, space_after_pt=0)
+
+
 def _render_parties(doc, document: MembershipQuoteDocument, brand: Brand) -> None:
-    """양측 발행 정보 (제휴사 | 회사)."""
+    """[Legacy] 양측 발행 정보 (제휴사 | 회사). 호환용 유지 — 새 코드는 _render_header_qr_style 사용."""
     font = brand.branding.font_family
     primary_hex = brand.branding.colors.primary.lstrip("#")
 
@@ -825,12 +979,14 @@ def render_membership_docx(brand: Brand, document: MembershipQuoteDocument,
         section.left_margin = Cm(0.75)
         section.right_margin = Cm(0.75)
 
+    # QR 견적서와 동일한 흐름: 로고 → 헤더(회사+발급정보) → 수신처(제휴사) →
+    # 단위 안내 → 섹션 표 → 합계 → 기타 안내 → 서명(날짜+회사명)
     for s_idx, scenario in enumerate(document.scenarios):
         if s_idx > 0:
             _add_page_break(doc)
         _render_logo(doc, brand, project_root)
-        _render_title(doc, document, scenario, brand)
-        _render_parties(doc, document, brand)
+        _render_header_qr_style(doc, document, brand)
+        _render_counterparty_qr_style(doc, document, brand)
         _render_unit_notice(doc, document, brand)
         for sec_i, sec in enumerate(scenario.sections):
             _render_section_table(doc, sec, brand)
@@ -839,8 +995,8 @@ def render_membership_docx(brand: Brand, document: MembershipQuoteDocument,
         if scenario.show_grand_total:
             _render_grand_total(doc, scenario, brand, vat_rate,
                                 total_discount_rate=document.total_discount_rate)
-        _render_date(doc, document, brand)
         _render_remarks(doc, document, brand)
+        _render_signature_qr_style(doc, document, brand)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(output_path))
