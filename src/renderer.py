@@ -185,8 +185,8 @@ def _render_header(doc, brand: Brand, document: QuoteDocument,
     primary = _hex_to_rgb(brand.branding.colors.primary)
 
     title_text = labels.quote.title if document.document_type == "quote" else labels.contract.title
-    _add_paragraph(doc, title_text, font=font, size_pt=16, bold=True,
-                   alignment=WD_ALIGN_PARAGRAPH.CENTER, color=primary, space_after_pt=4)
+    _add_paragraph(doc, title_text, font=font, size_pt=14, bold=True,
+                   alignment=WD_ALIGN_PARAGRAPH.CENTER, color=primary, space_after_pt=3)
 
     # 발행자(좌)를 넓게, 발행정보(우)를 우측 끝으로 컴팩트하게
     LEFT_W = Cm(11.5)
@@ -214,7 +214,7 @@ def _render_header(doc, brand: Brand, document: QuoteDocument,
     p.paragraph_format.space_after = Pt(1)
     p.paragraph_format.left_indent = Cm(0)
     run = p.add_run(brand.company.name_ko)
-    _apply_font(run, font, size_pt=13, bold=True, color=primary)
+    _apply_font(run, font, size_pt=11, bold=True, color=primary)
 
     info_lines = [
         f"사업자등록번호: {brand.company.registration_number}",

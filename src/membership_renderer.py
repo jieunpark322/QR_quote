@@ -297,7 +297,7 @@ def _render_title(doc, document: MembershipQuoteDocument,
     suffix = f" ({scenario.name})" if (scenario.name and scenario.name != "기본") else ""
     _add_paragraph(
         doc, f"{document.title}{suffix}",
-        font=font, size_pt=12, bold=True,
+        font=font, size_pt=11, bold=True,
         alignment=WD_ALIGN_PARAGRAPH.CENTER,
         color=primary, space_after_pt=1,
     )
