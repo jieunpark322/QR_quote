@@ -3703,7 +3703,6 @@ def main():
             "설정", SETTING_PAGES, key="menu_setting", index=None,
             label_visibility="collapsed",
             on_change=_on_setting_change,
-            placeholder="설정 선택...",
         )
 
     if st.session_state["_active_menu_group"] == "setting":
