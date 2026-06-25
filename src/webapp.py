@@ -721,22 +721,43 @@ def _render_qr_template_panel() -> None:
 # 데이터 로더 / 저장 헬퍼
 # ═════════════════════════════════════════════════════════════
 
+# 카탈로그 종류별 경로
+CATALOG_FILES = {
+    "qr": "products.json",                  # 일반 QR오더 견적기
+    "outdoor": "qr_outdoor_products.json",  # [야외형] QR오더 견적기
+}
+
+
 @st.cache_data
-def _load_products() -> list[dict]:
-    path = PROJECT_ROOT / "catalog" / "products.json"
+def _load_products_for(catalog_kind: str = "qr") -> list[dict]:
+    fname = CATALOG_FILES.get(catalog_kind, "products.json")
+    path = PROJECT_ROOT / "catalog" / fname
     if not path.exists():
         return []
     return json.loads(path.read_text(encoding="utf-8")).get("products", [])
 
 
-def _save_products(products: list[dict]) -> None:
-    path = PROJECT_ROOT / "catalog" / "products.json"
+@st.cache_data
+def _load_products() -> list[dict]:
+    """기존 호환 — 일반 QR 카탈로그."""
+    return _load_products_for("qr")
+
+
+def _save_products_for(catalog_kind: str, products: list[dict]) -> None:
+    fname = CATALOG_FILES.get(catalog_kind, "products.json")
+    path = PROJECT_ROOT / "catalog" / fname
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps({"products": products}, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    _load_products_for.clear()
     _load_products.clear()
+
+
+def _save_products(products: list[dict]) -> None:
+    """기존 호환 — 일반 QR 카탈로그 저장."""
+    _save_products_for("qr", products)
 
 
 @st.cache_data
@@ -940,11 +961,29 @@ def _row_amount(row, df=None):
     return -deduct
 
 
-def render_quote_page():
+CATALOG_LABELS = {
+    "qr": "QR오더 견적기",
+    "outdoor": "[야외형] QR오더 견적기",
+}
+
+
+def render_quote_page(catalog_kind: str = "qr"):
+    # 메뉴 전환 시 items_df 를 catalog_kind 별로 분리 보관/복원
+    active_kind = st.session_state.get("_active_catalog_kind", "qr")
+    if active_kind != catalog_kind:
+        # 현재 화면의 items_df 를 이전 종류 슬롯에 보관
+        if "items_df" in st.session_state:
+            st.session_state[f"_items_df_slot_{active_kind}"] = st.session_state["items_df"]
+        # 새 종류 슬롯 불러오기 (없으면 빈 표)
+        st.session_state["items_df"] = st.session_state.get(
+            f"_items_df_slot_{catalog_kind}", _empty_items_df()
+        )
+        st.session_state["_active_catalog_kind"] = catalog_kind
+
     _qr_autosave_load_once()
     _ensure_items_state()
     labels = load_labels(PROJECT_ROOT)
-    products = _load_products()
+    products = _load_products_for(catalog_kind)
     brand_ids = _list_brands()
     soffice_available = find_soffice() is not None
 
@@ -969,7 +1008,8 @@ def render_quote_page():
             st.warning("⚠ LibreOffice 미감지 — PDF 생성이 불가합니다.")
 
     # ─── 메인 ───
-    st.title("📋 견적서 자동 생성")
+    kind_label = CATALOG_LABELS.get(catalog_kind, "QR오더 견적기")
+    st.title(f"📋 {kind_label}")
     st.caption("폼을 채우고 '견적서 생성' 버튼을 누르면 DOCX/PDF 가 다운로드됩니다.")
 
     # ─── 최근 다운로드 견적서 (자동 기록) ───
@@ -1607,9 +1647,15 @@ def render_catalog_page():
         "탭으로 견적서 종류별로 관리할 수 있어요."
     )
 
-    tab_qr, tab_mc = st.tabs(["📋 QR 견적서 카탈로그", "🏢 멤버십 견적서 카탈로그"])
+    tab_qr, tab_out, tab_mc = st.tabs([
+        "📋 QR오더 카탈로그",
+        "🌳 [야외형] QR오더 카탈로그",
+        "🏢 멤버십 카탈로그",
+    ])
     with tab_qr:
-        _render_qr_catalog_editor()
+        _render_qr_catalog_editor(catalog_kind="qr")
+    with tab_out:
+        _render_qr_catalog_editor(catalog_kind="outdoor")
     with tab_mc:
         _render_membership_catalog_editor()
 
@@ -1631,12 +1677,13 @@ def _qr_catalog_signature(products: list[dict]) -> str:
     return json.dumps(products, ensure_ascii=False, sort_keys=True, default=str)
 
 
-def _render_qr_catalog_editor():
-    """QR 견적서용 평면 카탈로그 편집기."""
-    products = _load_products()
+def _render_qr_catalog_editor(catalog_kind: str = "qr"):
+    """QR/야외형 견적서용 평면 카탈로그 편집기 — catalog_kind 별로 분기."""
+    products = _load_products_for(catalog_kind)
+    sig_key = f"_qr_catalog_original_sig_{catalog_kind}"
     # 비교용 원본 시그니처를 첫 진입 시 저장
-    if "_qr_catalog_original_sig" not in st.session_state:
-        st.session_state["_qr_catalog_original_sig"] = _qr_catalog_signature(products)
+    if sig_key not in st.session_state:
+        st.session_state[sig_key] = _qr_catalog_signature(products)
 
     if not products:
         df = pd.DataFrame([{
@@ -1660,9 +1707,10 @@ def _render_qr_catalog_editor():
             "행 앞 **☰** 아이콘 영역을 잡아 위·아래로 드래그하면 순서를 바꿀 수 있어요."
         )
     with save_col:
+        save_label = "💾 야외형 카탈로그 저장" if catalog_kind == "outdoor" else "💾 QR 카탈로그 저장"
         save_clicked = st.button(
-            "💾 QR 카탈로그 저장", type="primary",
-            use_container_width=True, key="save_qr_catalog",
+            save_label, type="primary",
+            use_container_width=True, key=f"save_qr_catalog_{catalog_kind}",
         )
 
     # ── 드래그앤드롭 순서 변경 ──
@@ -1680,7 +1728,7 @@ def _render_qr_catalog_editor():
                 ]
                 sorted_labels = sort_items(
                     cat_labels, direction="vertical",
-                    key="qr_cat_sort_dnd",
+                    key=f"qr_cat_sort_dnd_{catalog_kind}",
                 )
                 if sorted_labels and sorted_labels != cat_labels:
                     try:
@@ -1726,7 +1774,7 @@ def _render_qr_catalog_editor():
         use_container_width=True,
         hide_index=True,
         height=720,
-        key="catalog_editor_qr",
+        key=f"catalog_editor_qr_{catalog_kind}",
     )
 
     # ── 저장 처리 ──
@@ -1738,7 +1786,6 @@ def _render_qr_catalog_editor():
                 continue
             code = _safe_str(row.get("code")).strip()
             if not code:
-                # 코드가 비어있으면 품목명 기반 자동 생성
                 base = "".join(c for c in name if c.isalnum() or c in "_-")[:20] or "ITEM"
                 code = f"{base}-{idx + 1}"
             up_v = row.get("unit_price")
@@ -1751,10 +1798,11 @@ def _render_qr_catalog_editor():
                                else 0),
                 "currency": _safe_str(row.get("currency")).strip() or "KRW",
             })
-        _save_products(new_products)
-        st.session_state["_qr_catalog_original_sig"] = _qr_catalog_signature(new_products)
+        _save_products_for(catalog_kind, new_products)
+        st.session_state[sig_key] = _qr_catalog_signature(new_products)
+        page_name = CATALOG_LABELS.get(catalog_kind, "QR오더 견적기")
         st.success(f"✅ {len(new_products)}개 상품 저장 완료. "
-                   "'QR 견적서 작성' 페이지로 가면 즉시 반영됩니다.")
+                   f"'{page_name}' 페이지에서 즉시 반영됩니다.")
 
     # ── 미저장 변경 감지 → 페이지 이탈 시 브라우저 경고 ──
     current_snapshot = [
@@ -1771,9 +1819,7 @@ def _render_qr_catalog_editor():
         for _, r in edited.iterrows()
         if _safe_str(r.get("name")).strip()
     ]
-    dirty = _qr_catalog_signature(current_snapshot) != st.session_state.get(
-        "_qr_catalog_original_sig", ""
-    )
+    dirty = _qr_catalog_signature(current_snapshot) != st.session_state.get(sig_key, "")
     if dirty:
         st.caption("⚠ **미저장 변경사항이 있습니다.** 우측 상단 '💾 저장' 버튼을 눌러주세요.")
     _inject_beforeunload(dirty)
@@ -3526,17 +3572,20 @@ def main():
         page = st.radio(
             "페이지",
             [
-                "📋 QR 견적서 작성",
-                "🏢 멤버십 견적서 작성",
+                "📋 QR오더 견적기",
+                "🌳 [야외형] QR오더 견적기",
+                "🏢 멤버십 견적기",
                 "📦 카탈로그 관리",
                 "⚙ 설정",
             ],
             label_visibility="collapsed",
         )
 
-    if page == "📋 QR 견적서 작성":
-        render_quote_page()
-    elif page == "🏢 멤버십 견적서 작성":
+    if page == "📋 QR오더 견적기":
+        render_quote_page(catalog_kind="qr")
+    elif page == "🌳 [야외형] QR오더 견적기":
+        render_quote_page(catalog_kind="outdoor")
+    elif page == "🏢 멤버십 견적기":
         render_membership_quote_page()
     elif page == "📦 카탈로그 관리":
         render_catalog_page()

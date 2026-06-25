@@ -1,0 +1,54 @@
+{
+  "_doc": "야외형 QR오더 견적기 카탈로그. 행사·페스티벌 단기 대여 패키지 기준. 청구기준·기간·매장수 등은 견적서 작성 화면에서 직접 입력.",
+  "products": [
+    {
+      "code": "OUT-QRORDER",
+      "name": "QR오더 시스템",
+      "description": "행사 전용 QR오더 발급\n전자영수증 발행\n(대금결제 · 한 매장 기준)",
+      "unit_price": 30000,
+      "currency": "KRW"
+    },
+    {
+      "code": "OUT-MATEAPP",
+      "name": "주문접수(메이트오더) 앱",
+      "description": "QR오더 주문 수신 및 처리용 앱\n매장 등록 제반사항 업무 지원\n(대금결제 · 한 매장 기준)",
+      "unit_price": 10000,
+      "currency": "KRW"
+    },
+    {
+      "code": "OUT-TABLET",
+      "name": "태블릿 PC + 휴대용 인터넷",
+      "description": "사업주 사용\n(대금결제 · 한 매장 기준)",
+      "unit_price": 50000,
+      "currency": "KRW"
+    },
+    {
+      "code": "OUT-KIOSK",
+      "name": "통합 키오스크 패키지 (3일 이상)",
+      "description": "실물 카드 결제용 태블릿(미니키오스크)\n- 삼성 태블릿(SM-X110) + 거치대\n- 보조배터리 20,000mAh\n- 인터넷 라우터(전원연결형)\n- 통합 솔루션\n(대금결제 · 1일 기준)",
+      "unit_price": 100000,
+      "currency": "KRW"
+    },
+    {
+      "code": "OUT-KAKAO",
+      "name": "카카오톡 알림톡 브랜드 계정 연동",
+      "description": "고객 안내 알림톡 브랜드 채널 연동\n알림톡 문구 커스텀 적용\n(대금결제)",
+      "unit_price": 300000,
+      "currency": "KRW"
+    },
+    {
+      "code": "OUT-ADBANNER",
+      "name": "광고 배너 Web 연결",
+      "description": "광고 배너 Web 연결\n(대금결제 · 1일 기준)",
+      "unit_price": 50000,
+      "currency": "KRW"
+    },
+    {
+      "code": "OUT-OPS",
+      "name": "현장 운영 지원 (푸드테크) 지방",
+      "description": "현장 시스템 안전성 현장 관리\n사용자 교육\n사업주 문의 대응\n(대금결제 · 1일 기준)",
+      "unit_price": 200000,
+      "currency": "KRW"
+    }
+  ]
+}
