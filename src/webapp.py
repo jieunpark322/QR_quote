@@ -1221,6 +1221,11 @@ def render_quote_page(catalog_kind: str = "qr"):
         display_df["공급가"] = display_df.apply(
             lambda r: _row_amount(r, df=display_df), axis=1
         ).astype("Int64")
+        # 후불(QR결제%) 행: 단가가 0/빈 값이면 화면에서도 빈 칸 (₩0 표기 방지)
+        deferred_mask = display_df["분류"].astype(str) == ITEM_KIND_DEFERRED
+        if deferred_mask.any():
+            zero_price = display_df["단가"].fillna(0) == 0
+            display_df.loc[deferred_mask & zero_price, "단가"] = pd.NA
         display_df = display_df[DISPLAY_COLUMNS]
 
         edited_df = st.data_editor(
@@ -1519,23 +1524,14 @@ def _build_quote_artifacts(*, brand_id, issued_date, valid_until,
         disc_amt = row.get("할인금액")
 
         if is_deferred_row:
-            # 후불(QR결제 %): 합계 미포함, 견적서 별도 안내로만 표시
-            #  - unit_price 자체를 0 으로 두고 description 에 후청구 정보 박제
-            rate_v = unit_price_raw if pd.notna(unit_price_raw) else 0
-            try:
-                rate_int = int(rate_v) if rate_v else 0
-            except (TypeError, ValueError):
-                rate_int = 0
-            deferred_desc = (
-                f"[후청구] QR오더 결제액의 {rate_int}% — 행사 종료 후 정산"
-            )
-            if isinstance(desc_val, str) and desc_val.strip():
-                deferred_desc = deferred_desc + "\n" + desc_val.strip()
+            # 후불(QR결제 %): 합계 미포함, PDF 에서 단가/공급가 '-' 로 표시
+            # 자동 prefix 추가하지 않음 — 사용자가 설명/비고에 직접 작성
             items.append(LineItem(
                 name=name,
-                description=deferred_desc,
+                description=desc_val if isinstance(desc_val, str) and desc_val else None,
                 qty=None, period=None,
                 unit_price=0,
+                billing_type="deferred_percent",
                 notes=notes_val if isinstance(notes_val, str) and notes_val else None,
             ))
             continue

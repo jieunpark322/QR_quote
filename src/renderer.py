@@ -362,6 +362,9 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
 
     # 컬럼 정의 — 새 순서: 항목·설명·단가·기간(횟수)·수량·할인·공급가·비고
     # 각 컬럼: (key, header, base_width_cm, align, value_getter, always_show, has_data_check)
+    def _is_deferred(i) -> bool:
+        return (getattr(i, "billing_type", None) or "") == "deferred_percent"
+
     all_columns = [
         ("name", th.name, 3.2, LEFT,
          lambda i: i.name or "", True, None),
@@ -369,7 +372,9 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
          lambda i: i.description or "", False,
          lambda its: any((i.description or "").strip() for i in its)),
         ("unit_price", th.unit_price, 2.4, RIGHT,
-         lambda i: _format_money(i.unit_price, i.currency), True, None),
+         lambda i: ("-" if _is_deferred(i)
+                    else _format_money(i.unit_price, i.currency)),
+         True, None),
         ("period", th.period, 1.4, CENTER,
          lambda i: f"{i.period:g}" if (i.period is not None and i.period) else "",
          False,
@@ -380,7 +385,9 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
          _discount_text, False,
          lambda its: any(((i.discount_amount or 0) > 0) or i.discount_rate for i in its)),
         ("amount", th.amount, 2.8, RIGHT,
-         lambda i: _format_money(i.amount, i.currency), True, None),
+         lambda i: ("-" if _is_deferred(i)
+                    else _format_money(i.amount, i.currency)),
+         True, None),
         ("notes", th.notes, 3.2, LEFT,
          lambda i: i.notes or "", False,
          lambda its: any((i.notes or "").strip() for i in its)),

@@ -76,6 +76,9 @@ class LineItem(BaseModel):
     discount_amount: float | None = None   # 항목별 할인 금액 (양수)
     currency: str = "KRW"
     notes: str | None = None
+    # 청구 방식 메타. 'deferred_percent' 면 후불(QR결제 %) 항목 — PDF 에서
+    # 단가/공급가 셀을 '-' 로 표시하고 합계에서 제외
+    billing_type: str | None = None
 
     @property
     def gross_amount(self) -> float:
