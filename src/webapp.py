@@ -1782,6 +1782,12 @@ def _render_qr_catalog_editor(catalog_kind: str = "qr"):
             lambda v: "후불(QR결제%)" if str(v).lower() == "deferred_percent"
             else "일시납"
         )
+        # 후불 항목 단가가 0/빈 값이면 화면에서 빈 칸 (₩0 표기 방지)
+        if "unit_price" in df.columns:
+            deferred = df["billing_type"] == "후불(QR결제%)"
+            if deferred.any():
+                zero_or_na = df["unit_price"].fillna(0) == 0
+                df.loc[deferred & zero_or_na, "unit_price"] = pd.NA
 
     # ── 상단 액션 바: 캡션(좌) + 저장 버튼(우) ──
     cap_col, save_col = st.columns([5, 1.3])
