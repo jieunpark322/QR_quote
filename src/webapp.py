@@ -3680,15 +3680,17 @@ def main():
         "⚙ 기본 설정",
     ]
 
-    # 마지막 클릭된 그룹 추적 (두 라디오 동시 표시되어도 한쪽만 활성)
-    if "_active_menu_group" not in st.session_state:
-        st.session_state["_active_menu_group"] = "quote"
+    # 처음 진입: 견적기 그룹의 첫 항목만 활성, 설정 그룹은 비어 있음
+    if "menu_quote" not in st.session_state and "menu_setting" not in st.session_state:
+        st.session_state["menu_quote"] = QUOTE_PAGES[0]
+        st.session_state["menu_setting"] = None
 
+    # 한 그룹 클릭 시 다른 그룹 자동 선택 해제 → 시각적으로도 하나만 활성
     def _on_quote_change():
-        st.session_state["_active_menu_group"] = "quote"
+        st.session_state["menu_setting"] = None
 
     def _on_setting_change():
-        st.session_state["_active_menu_group"] = "setting"
+        st.session_state["menu_quote"] = None
 
     with st.sidebar:
         st.markdown("### 📑 견적기")
@@ -3700,15 +3702,14 @@ def main():
         st.markdown("---")
         st.markdown("### ⚙ 설정")
         st.radio(
-            "설정", SETTING_PAGES, key="menu_setting", index=None,
+            "설정", SETTING_PAGES, key="menu_setting",
             label_visibility="collapsed",
             on_change=_on_setting_change,
         )
 
-    if st.session_state["_active_menu_group"] == "setting":
-        page = st.session_state.get("menu_setting")
-    else:
-        page = st.session_state.get("menu_quote") or QUOTE_PAGES[0]
+    page = (st.session_state.get("menu_quote")
+            or st.session_state.get("menu_setting")
+            or QUOTE_PAGES[0])
 
     if page == "📋 QR오더 견적기":
         render_quote_page(catalog_kind="qr")
