@@ -4,7 +4,7 @@
 
 페이지 구성:
   📋 견적서 작성       — 폼 입력 → DOCX/PDF 다운로드
-  📦 카탈로그 관리     — 상품 추가/수정/삭제
+  📦 품목 관리     — 상품 추가/수정/삭제
   ⚙ 설정              — 브랜드 정보, 양식 라벨/문구 편집
 """
 from __future__ import annotations
@@ -1077,7 +1077,7 @@ def render_quote_page(catalog_kind: str = "qr"):
 
     st.subheader("3. 품목 내역")
     st.caption(
-        "💡 카탈로그 선택 또는 '+ 빈 행' 으로 추가. 할인은 **'+ 할인 행'** 클릭. "
+        "💡 품목 선택 또는 '+ 빈 행' 으로 추가. 할인은 **'+ 할인 행'** 클릭. "
         "할인 행에는 **단가** 또는 **할인율(%)** 입력 — **할인율(%)** 은 일반 품목 "
         "합계의 N% 만큼 일괄 차감됩니다."
     )
@@ -1087,7 +1087,7 @@ def render_quote_page(catalog_kind: str = "qr"):
         if products:
             options = list(range(len(products)))
             picked_idx = st.selectbox(
-                "카탈로그에서 추가",
+                "품목에서 추가",
                 options=options,
                 index=None,
                 format_func=lambda i: (
@@ -1098,12 +1098,12 @@ def render_quote_page(catalog_kind: str = "qr"):
                 label_visibility="collapsed",
             )
         else:
-            st.info("카탈로그가 비어있습니다. '카탈로그 관리' 페이지에서 상품을 추가하세요.")
+            st.info("품목이 비어있습니다. '품목 관리' 페이지에서 상품을 추가하세요.")
             picked_idx = None
     with add_col:
         if st.button("+ 추가", use_container_width=True,
                      disabled=picked_idx is None,
-                     help="선택한 카탈로그 상품을 품목 표에 추가합니다."):
+                     help="선택한 품목을 표에 추가합니다."):
             _add_catalog_row(products[picked_idx])
             st.rerun()
     with blank_col:
@@ -1146,7 +1146,7 @@ def render_quote_page(catalog_kind: str = "qr"):
                     st.rerun()
 
     if st.session_state.items_df.empty:
-        st.info("아직 품목이 없습니다. 위 드롭다운에서 카탈로그 상품을 추가하거나 '+ 빈 행' 을 누르세요.")
+        st.info("아직 품목이 없습니다. 위 드롭다운에서 품목을 추가하거나 '+ 빈 행' 을 누르세요.")
         edited_df = st.session_state.items_df
     else:
         # 행 순서 변경 — 카드 + ☰ 아이콘 + ⬆⬇ 버튼 (한 클릭에 행 이동)
@@ -1637,20 +1637,20 @@ def _preview_quote(**kwargs):
 
 
 # ═════════════════════════════════════════════════════════════
-# 페이지 2: 카탈로그 관리
+# 페이지 2: 품목 관리
 # ═════════════════════════════════════════════════════════════
 
 def render_catalog_page():
-    st.title("📦 카탈로그 관리")
+    st.title("📦 품목 관리")
     st.caption(
-        "견적서 작성 화면의 '카탈로그 빠른 추가' 드롭다운에 사용되는 상품 목록입니다. "
+        "견적서 작성 화면의 '품목 빠른 추가' 드롭다운에 사용되는 상품 목록입니다. "
         "탭으로 견적서 종류별로 관리할 수 있어요."
     )
 
     tab_qr, tab_out, tab_mc = st.tabs([
-        "📋 QR오더 카탈로그",
-        "🌳 [야외형] QR오더 카탈로그",
-        "🏢 멤버십 카탈로그",
+        "📋 QR오더 품목",
+        "🌳 [야외형] QR오더 품목",
+        "🏢 멤버십 품목",
     ])
     with tab_qr:
         _render_qr_catalog_editor(catalog_kind="qr")
@@ -1707,7 +1707,7 @@ def _render_qr_catalog_editor(catalog_kind: str = "qr"):
             "행 앞 **☰** 아이콘 영역을 잡아 위·아래로 드래그하면 순서를 바꿀 수 있어요."
         )
     with save_col:
-        save_label = "💾 야외형 카탈로그 저장" if catalog_kind == "outdoor" else "💾 QR 카탈로그 저장"
+        save_label = "💾 야외형 품목 저장" if catalog_kind == "outdoor" else "💾 QR 품목 저장"
         save_clicked = st.button(
             save_label, type="primary",
             use_container_width=True, key=f"save_qr_catalog_{catalog_kind}",
@@ -1879,7 +1879,7 @@ def _render_membership_catalog_editor():
         )
     with save_col:
         save_clicked = st.button(
-            "💾 멤버십 카탈로그 저장", type="primary",
+            "💾 멤버십 품목 저장", type="primary",
             use_container_width=True, key="save_mc_catalog",
         )
 
@@ -2863,7 +2863,7 @@ def render_membership_quote_page():
     # ─── 3. 품목 내역 (평면 표 — QR 견적서와 동일 UX) ───
     st.subheader("3. 품목 내역")
     st.caption(
-        "💡 카탈로그 선택 또는 '+ 빈 행' 으로 추가. 할인은 **'+ 할인행'** 으로 추가. "
+        "💡 품목 선택 또는 '+ 빈 행' 으로 추가. 할인은 **'+ 할인행'** 으로 추가. "
         "할인 행의 **할인율(%)** 은 일반 품목 합의 N% 만큼 일괄 차감됩니다."
     )
 
@@ -2875,24 +2875,24 @@ def render_membership_quote_page():
     with pick_col:
         if products:
             picked_idx = st.selectbox(
-                "카탈로그에서 추가",
+                "품목에서 추가",
                 options=products_options,
                 index=None,
                 format_func=lambda i: (
                     f"[{products[i].get('section', '')}/{products[i].get('subcategory', '')}] "
                     f"{products[i].get('name', '')}"
                 ),
-                placeholder="카탈로그 항목 선택 (검색 가능)...",
+                placeholder="품목 선택 (검색 가능)...",
                 key="mc_catalog_pick",
                 label_visibility="collapsed",
             )
         else:
-            st.info("카탈로그가 비어있습니다. '카탈로그 관리' 페이지에서 추가하세요.")
+            st.info("품목이 비어있습니다. '품목 관리' 페이지에서 추가하세요.")
             picked_idx = None
     with add_col:
         if st.button("+ 추가", use_container_width=True,
                      disabled=picked_idx is None,
-                     help="선택한 카탈로그 항목을 표에 추가",
+                     help="선택한 품목을 표에 추가",
                      key="mc_add_cat"):
             _mc_add_catalog_row(products[picked_idx])
             st.rerun()
@@ -2944,7 +2944,7 @@ def render_membership_quote_page():
 
     # 본문 표
     if st.session_state.mc_items_df.empty:
-        st.info("아직 품목이 없습니다. 카탈로그에서 추가하거나 '+ 빈 행' 을 누르세요.")
+        st.info("아직 품목이 없습니다. 품목에서 추가하거나 '+ 빈 행' 을 누르세요.")
         mc_edited_df = st.session_state.mc_items_df
     else:
         # 행 순서 변경
@@ -3302,7 +3302,7 @@ def _render_section_editor(s_idx: int, sec_idx: int, section: dict,
     flat_items = _section_to_flat_items(section)
     df = _mc_items_to_df(flat_items)
 
-    # 카탈로그 빠른 추가 (드롭다운) + 빈 행 + 할인 행
+    # 품목 빠른 추가 (드롭다운) + 빈 행 + 할인 행
     section_name = section.get("name", "")
     matching = [p for p in products if p.get("section") == section_name]
     quick_col1, quick_col2, quick_col3, quick_col4 = st.columns([4, 1.3, 1.0, 1.3])
@@ -3310,28 +3310,28 @@ def _render_section_editor(s_idx: int, sec_idx: int, section: dict,
         if matching:
             options = list(range(len(matching)))
             picked = st.selectbox(
-                "카탈로그에서 항목 추가",
+                "품목 추가",
                 options=options,
                 index=None,
                 format_func=lambda i: (
                     f"[{matching[i].get('subcategory', '-')}] {matching[i]['name']}"
                 ),
-                placeholder=f"'{section_name}' 카탈로그에서 항목 선택...",
+                placeholder=f"'{section_name}' 품목 선택...",
                 key=f"sec_pick_{s_idx}_{sec_idx}",
                 label_visibility="collapsed",
             )
         else:
             st.caption(
-                f"'{section_name}' 와 매칭되는 카탈로그 항목이 없습니다. "
+                f"'{section_name}' 와 매칭되는 품목이 없습니다. "
                 "오른쪽 '+ 빈 행' 으로 직접 추가할 수 있어요."
             )
             picked = None
     with quick_col2:
-        if st.button("+ 카탈로그 추가", key=f"sec_addrow_{s_idx}_{sec_idx}",
+        if st.button("+ 품목 추가", key=f"sec_addrow_{s_idx}_{sec_idx}",
                      use_container_width=True,
                      help="좌측 드롭다운에서 항목을 선택한 뒤 누르세요"):
             if picked is None or not matching:
-                st.warning("⚠ 좌측 드롭다운에서 카탈로그 항목을 먼저 선택해주세요.")
+                st.warning("⚠ 좌측 드롭다운에서 품목을 먼저 선택해주세요.")
             else:
                 p = matching[picked]
                 new_row = {
@@ -3575,7 +3575,7 @@ def main():
                 "📋 QR오더 견적기",
                 "🌳 [야외형] QR오더 견적기",
                 "🏢 멤버십 견적기",
-                "📦 카탈로그 관리",
+                "📦 품목 관리",
                 "⚙ 설정",
             ],
             label_visibility="collapsed",
@@ -3587,7 +3587,7 @@ def main():
         render_quote_page(catalog_kind="outdoor")
     elif page == "🏢 멤버십 견적기":
         render_membership_quote_page()
-    elif page == "📦 카탈로그 관리":
+    elif page == "📦 품목 관리":
         render_catalog_page()
     elif page == "⚙ 설정":
         render_settings_page()
