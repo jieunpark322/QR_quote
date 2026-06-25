@@ -355,7 +355,8 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
 
     def _discount_text(i):
         if i.discount_amount and i.discount_amount > 0:
-            return f"-{_format_money(i.discount_amount, i.currency)}"
+            # 할인 셀은 의미상 음수 — '-' 부호 없이 금액만 표시
+            return _format_money(i.discount_amount, i.currency)
         if i.discount_rate:
             return f"{int(round(i.discount_rate * 100))}%"
         return ""

@@ -842,9 +842,9 @@ def _render_item_row_in_table(table, row_idx: int, item: MembershipLineItem,
                font=font, size_pt=7.5, align=up_align,
                bold=is_discount, color=disc_color, bg=disc_bg)
 
-    # 컬럼 5: 할인 (할인금액 > 할인율)
+    # 컬럼 5: 할인 (할인금액 > 할인율). '할인' 의미상 음수 — '-' 부호 없이 금액만
     if item.discount_amount and item.discount_amount > 0:
-        disc_text = f"-{_money(item.discount_amount)}"
+        disc_text = _money(item.discount_amount)
     elif item.discount_rate:
         disc_text = f"{int(round(item.discount_rate * 100))}%"
     else:
