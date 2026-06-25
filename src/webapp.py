@@ -3670,19 +3670,46 @@ def _preview_membership_quote(state: dict, soffice_available: bool,
 def main():
     st.set_page_config(page_title="견적서 자동 생성", page_icon="📋", layout="wide")
 
+    QUOTE_PAGES = [
+        "📋 QR오더 견적기",
+        "🌳 [야외형] QR오더 견적기",
+        "🏢 멤버십 견적기",
+    ]
+    SETTING_PAGES = [
+        "📦 품목 관리",
+        "⚙ 기본 설정",
+    ]
+
+    # 마지막 클릭된 그룹 추적 (두 라디오 동시 표시되어도 한쪽만 활성)
+    if "_active_menu_group" not in st.session_state:
+        st.session_state["_active_menu_group"] = "quote"
+
+    def _on_quote_change():
+        st.session_state["_active_menu_group"] = "quote"
+
+    def _on_setting_change():
+        st.session_state["_active_menu_group"] = "setting"
+
     with st.sidebar:
-        st.markdown("### 메뉴")
-        page = st.radio(
-            "페이지",
-            [
-                "📋 QR오더 견적기",
-                "🌳 [야외형] QR오더 견적기",
-                "🏢 멤버십 견적기",
-                "📦 품목 관리",
-                "⚙ 설정",
-            ],
+        st.markdown("### 📑 견적기")
+        st.radio(
+            "견적기", QUOTE_PAGES, key="menu_quote",
             label_visibility="collapsed",
+            on_change=_on_quote_change,
         )
+        st.markdown("---")
+        st.markdown("### ⚙ 설정")
+        st.radio(
+            "설정", SETTING_PAGES, key="menu_setting", index=None,
+            label_visibility="collapsed",
+            on_change=_on_setting_change,
+            placeholder="설정 선택...",
+        )
+
+    if st.session_state["_active_menu_group"] == "setting":
+        page = st.session_state.get("menu_setting")
+    else:
+        page = st.session_state.get("menu_quote") or QUOTE_PAGES[0]
 
     if page == "📋 QR오더 견적기":
         render_quote_page(catalog_kind="qr")
@@ -3692,7 +3719,7 @@ def main():
         render_membership_quote_page()
     elif page == "📦 품목 관리":
         render_catalog_page()
-    elif page == "⚙ 설정":
+    elif page == "⚙ 기본 설정":
         render_settings_page()
 
 
