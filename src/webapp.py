@@ -821,16 +821,28 @@ def _ensure_items_state():
 
 
 def _add_catalog_row(product: dict):
+    # billing_type 메타로 분류 자동 셋팅 (deferred_percent → 후불)
+    btype = (product.get("billing_type") or "").lower()
+    if btype == "deferred_percent":
+        kind = ITEM_KIND_DEFERRED
+        period_v = None
+        qty_v = None
+        notes_v = "QR결제액 기준 후청구"
+    else:
+        kind = ITEM_KIND_NORMAL
+        period_v = 1
+        qty_v = 1
+        notes_v = ""
     new_row = {
-        "분류": ITEM_KIND_NORMAL,
+        "분류": kind,
         "항목": product["name"],
         "설명": product.get("description", ""),
         "단가": int(product.get("unit_price", 0)),
-        "기간(횟수)": 1,
-        "수량": 1,
+        "기간(횟수)": period_v,
+        "수량": qty_v,
         "할인율(%)": None,
         "할인금액": None,
-        "비고": "",
+        "비고": notes_v,
     }
     df = st.session_state.items_df
     st.session_state.items_df = pd.concat(
@@ -861,25 +873,6 @@ def _add_discount_row():
         "할인율(%)": None,
         "할인금액": None,
         "비고": "협상가",
-    }
-    st.session_state.items_df = pd.concat(
-        [df, pd.DataFrame([new_row])], ignore_index=True,
-    )
-
-
-def _add_deferred_row():
-    """후불(QR결제 %) 행 추가 — 야외형 견적기에서 행사 후 정산용."""
-    df = st.session_state.items_df
-    new_row = {
-        "분류": ITEM_KIND_DEFERRED,
-        "항목": "솔루션 사용료",
-        "설명": "행사 종료 후 QR오더 결제액 기준 정산 (후청구)",
-        "단가": 5,                   # %로 사용 — 예: 5 → 5%
-        "기간(횟수)": None,
-        "수량": None,
-        "할인율(%)": None,
-        "할인금액": None,
-        "비고": "QR결제액의 N% (후청구)",
     }
     st.session_state.items_df = pd.concat(
         [df, pd.DataFrame([new_row])], ignore_index=True,
@@ -1099,9 +1092,9 @@ def render_quote_page(catalog_kind: str = "qr"):
     st.subheader("3. 품목 내역")
     if catalog_kind == "outdoor":
         st.caption(
-            "💡 품목 선택 또는 '+ 빈 행'. 할인은 **'+ 할인 행'**, "
-            "QR결제액 기준 후불(후청구) 항목은 **'💸 + 후불 행'** 으로 추가. "
-            "후불 행은 합계에 포함되지 않고 별도 '💸 후청구 안내' 박스로 표시됩니다."
+            "💡 품목 선택 또는 '+ 빈 행' 으로 추가. 할인은 **'+ 할인 행'**. "
+            "후불(QR결제액 기준 후청구) 항목은 **품목 관리** 에서 청구 방식이 "
+            "'후불(%)' 로 설정된 항목을 골라 추가하면 자동 분류됩니다."
         )
     else:
         st.caption(
@@ -1110,16 +1103,9 @@ def render_quote_page(catalog_kind: str = "qr"):
             "합계의 N% 만큼 일괄 차감됩니다."
         )
 
-    # 야외형 견적기에는 '후불 행' 버튼 추가 (행사 후 QR결제액 % 정산용)
-    if catalog_kind == "outdoor":
-        pick_col, add_col, blank_col, disc_col, def_col, reset_col = st.columns(
-            [4.2, 1.1, 1.1, 1.1, 1.3, 1.2]
-        )
-    else:
-        pick_col, add_col, blank_col, disc_col, reset_col = st.columns(
-            [5, 1.2, 1.2, 1.2, 1.2]
-        )
-        def_col = None
+    pick_col, add_col, blank_col, disc_col, reset_col = st.columns(
+        [5, 1.2, 1.2, 1.2, 1.2]
+    )
     with pick_col:
         if products:
             options = list(range(len(products)))
@@ -1152,13 +1138,6 @@ def render_quote_page(catalog_kind: str = "qr"):
                      help="음수 단가 행이 자동 추가됩니다. 협상 금액으로 단가 조정 가능."):
             _add_discount_row()
             st.rerun()
-    if def_col is not None:
-        with def_col:
-            if st.button("💸 + 후불 행", use_container_width=True,
-                         help=("후불(후청구) 행 추가. '단가' 칸에 % 값을 입력하면 "
-                               "'QR결제액 × N%' 후청구 안내로 표시됩니다.")):
-                _add_deferred_row()
-                st.rerun()
     with reset_col:
         if st.button("전체 초기화", use_container_width=True,
                      key="qr_reset_request"):
@@ -1257,7 +1236,9 @@ def render_quote_page(catalog_kind: str = "qr"):
                 "설명": st.column_config.TextColumn("설명", width="large"),
                 "단가": st.column_config.NumberColumn(
                     "단가", step=1000, format="₩%,d", width="small",
-                    help="단가 (양수). '💰 할인' 분류는 자동 차감됩니다.",
+                    help=("일반 품목: 단가(원). '💰 할인행': 자동 차감. "
+                          "'💸 후불(QR결제%)': 단가 칸 값이 % 로 해석됩니다 "
+                          "(예: 5 → QR결제액의 5%)."),
                 ),
                 "기간(횟수)": st.column_config.NumberColumn(
                     "기간(횟수)", min_value=0, step=1, width="small",
@@ -1792,12 +1773,19 @@ def _render_qr_catalog_editor(catalog_kind: str = "qr"):
             "description": "",
             "unit_price": 0,
             "currency": "KRW",
+            "billing_type": "일시납",
         }])
     else:
         df = pd.DataFrame(products)
-        for col, default in [("description", ""), ("currency", "KRW"), ("code", "")]:
+        for col, default in [("description", ""), ("currency", "KRW"),
+                              ("code", ""), ("billing_type", "")]:
             if col not in df.columns:
                 df[col] = default
+        # 내부 enum 값을 사람이 보기 좋은 라벨로
+        df["billing_type"] = df["billing_type"].apply(
+            lambda v: "후불(QR결제%)" if str(v).lower() == "deferred_percent"
+            else "일시납"
+        )
 
     # ── 상단 액션 바: 캡션(좌) + 저장 버튼(우) ──
     cap_col, save_col = st.columns([5, 1.3])
@@ -1843,7 +1831,8 @@ def _render_qr_catalog_editor(catalog_kind: str = "qr"):
                 st.warning("드래그앤드롭 컴포넌트가 설치되지 않았습니다.")
 
     edited = st.data_editor(
-        df[["code", "name", "description", "unit_price", "currency"]],
+        df[["code", "name", "description", "unit_price",
+             "currency", "billing_type"]],
         column_config={
             "code": st.column_config.TextColumn(
                 "코드 (선택사항)", help="고유 식별자 (영문/숫자/하이픈). 비워두면 자동 생성.",
@@ -1862,12 +1851,19 @@ def _render_qr_catalog_editor(catalog_kind: str = "qr"):
             "unit_price": st.column_config.NumberColumn(
                 "단가", min_value=0, step=1000, format="%,d",
                 width="small",
-                help="숫자만 입력. 통화 기호는 옆 '통화' 컬럼 설정에 따라 견적서 PDF 에서 자동 표기됩니다.",
+                help=("일시납은 원 단위 / 후불(QR결제%) 은 % 값 (예: 5 → 5%) 입력."),
             ),
             "currency": st.column_config.SelectboxColumn(
                 "통화", options=["KRW", "USD", "EUR", "JPY"],
                 width="small",
                 help="견적서 PDF 에서 단가 옆에 자동으로 붙는 통화 기호 (₩ / $ / € / ¥).",
+            ),
+            "billing_type": st.column_config.SelectboxColumn(
+                "청구 방식", options=["일시납", "후불(QR결제%)"],
+                width="small",
+                help=("'일시납' 은 일반 단가. "
+                      "'후불(QR결제%)' 은 견적서에서 자동으로 '💸 후불' 분류로 추가되고, "
+                      "단가는 % 로 해석되어 합계와 별도로 후청구 안내에 표시."),
             ),
         },
         num_rows="dynamic",
@@ -1889,7 +1885,8 @@ def _render_qr_catalog_editor(catalog_kind: str = "qr"):
                 base = "".join(c for c in name if c.isalnum() or c in "_-")[:20] or "ITEM"
                 code = f"{base}-{idx + 1}"
             up_v = row.get("unit_price")
-            new_products.append({
+            btype_label = _safe_str(row.get("billing_type")).strip()
+            item: dict = {
                 "code": code,
                 "name": name,
                 "description": _safe_str(row.get("description")).strip(),
@@ -1897,7 +1894,10 @@ def _render_qr_catalog_editor(catalog_kind: str = "qr"):
                                if pd.notna(up_v) and up_v not in ("", None)
                                else 0),
                 "currency": _safe_str(row.get("currency")).strip() or "KRW",
-            })
+            }
+            if btype_label == "후불(QR결제%)":
+                item["billing_type"] = "deferred_percent"
+            new_products.append(item)
         _save_products_for(catalog_kind, new_products)
         st.session_state[sig_key] = _qr_catalog_signature(new_products)
         page_name = CATALOG_LABELS.get(catalog_kind, "QR오더 견적기")
@@ -1915,6 +1915,9 @@ def _render_qr_catalog_editor(catalog_kind: str = "qr"):
                            and r.get("unit_price") not in ("", None)
                            else 0),
             "currency": _safe_str(r.get("currency")).strip() or "KRW",
+            "billing_type": ("deferred_percent"
+                             if _safe_str(r.get("billing_type")).strip() == "후불(QR결제%)"
+                             else "fixed"),
         }
         for _, r in edited.iterrows()
         if _safe_str(r.get("name")).strip()
