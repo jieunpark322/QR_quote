@@ -215,7 +215,7 @@ def _render_header(doc, brand: Brand, document: QuoteDocument,
     info_table.columns[1].width = RIGHT_W
     _force_fixed_column_widths(info_table, [LEFT_W, RIGHT_W])
 
-    info_table.rows[0].height = Cm(3.0)
+    info_table.rows[0].height = Cm(2.0)
     info_table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
 
     left, right = info_table.rows[0].cells
@@ -279,7 +279,7 @@ def _render_header(doc, brand: Brand, document: QuoteDocument,
         row_obj = inner.rows[idx]
         # row 높이 명시 (LibreOffice가 vAlign 인식하도록).
         # AT_LEAST → 이메일 등 긴 텍스트는 줄바꿈하면서 행이 자동으로 늘어남 (잘림 방지)
-        row_obj.height = Cm(0.6)
+        row_obj.height = Cm(0.4)
         row_obj.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
         lc, vc = row_obj.cells
         # 셀 단위에도 너비 재지정 (LibreOffice가 columns[].width를 무시하는 경우 대비)
@@ -307,7 +307,7 @@ def _render_counterparty(doc, brand: Brand, document: QuoteDocument,
 
     _add_paragraph(doc, labels.quote.labels.counterparty_section,
                    font=font, size_pt=10, bold=True,
-                   color=primary, space_before_pt=18, space_after_pt=2)
+                   color=primary, space_before_pt=2, space_after_pt=2)
 
     cp = document.counterparty
     table = doc.add_table(rows=1, cols=1)
@@ -346,7 +346,7 @@ def _render_counterparty(doc, brand: Brand, document: QuoteDocument,
 
     _add_paragraph(doc, f"{labels.quote.labels.subject_prefix}: {document.subject}",
                    font=font, size_pt=9.5, bold=True,
-                   space_before_pt=12, space_after_pt=2)
+                   space_before_pt=57, space_after_pt=2)
 
 
 def _render_line_items(doc, brand: Brand, document: QuoteDocument,
