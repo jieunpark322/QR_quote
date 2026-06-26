@@ -1371,67 +1371,6 @@ def render_quote_page(catalog_kind: str = "qr"):
         if changed:
             st.rerun()
 
-        # ── 할인 적용 미리보기 — 분류=할인행 + 항목별 할인 행 둘 다 ──
-        disc_mask = edited_df["분류"].astype(str) == ITEM_KIND_DISCOUNT
-        # 항목별 할인 (할인율 또는 할인금액 > 0)
-        item_disc_mask = (
-            (pd.to_numeric(edited_df["할인율(%)"], errors="coerce").fillna(0) > 0)
-            | (pd.to_numeric(edited_df["할인금액"], errors="coerce").fillna(0) > 0)
-        ) & ~disc_mask
-        combined_mask = disc_mask | item_disc_mask
-        any_rows = edited_df[combined_mask]
-        if not any_rows.empty:
-            disc_amounts = edited_df[disc_mask].apply(
-                lambda r: _row_amount(r, df=edited_df), axis=1
-            )
-            disc_total_row = int(pd.to_numeric(disc_amounts, errors="coerce").fillna(0).sum())
-            # 항목별 할인 차감 합 계산
-            item_disc_total = 0
-            for _, r in edited_df[item_disc_mask].iterrows():
-                price = r.get("단가")
-                if not (pd.notna(price) and price):
-                    continue
-                try:
-                    q = int(r.get("수량") or 1) or 1
-                    p = int(r.get("기간(횟수)") or 1) or 1
-                    gross = int(price) * q * p
-                except (TypeError, ValueError):
-                    continue
-                d_amt = r.get("할인금액")
-                d_rate = r.get("할인율(%)")
-                if pd.notna(d_amt) and d_amt:
-                    item_disc_total += int(d_amt)
-                elif pd.notna(d_rate) and d_rate:
-                    item_disc_total += int(round(gross * float(d_rate) / 100))
-            total_disc = abs(disc_total_row) + item_disc_total
-            st.markdown(
-                f"""
-<div style="background:#FDECEA; border-left:4px solid #C0392B;
-            border-radius:6px; padding:10px 14px; margin:6px 0 4px;">
-  <div style="color:#C0392B; font-weight:700; font-size:0.95rem;">
-    💰 할인 적용 내역 · {len(any_rows)}건 · 차감 합계 <span style="font-size:1.05rem">₩{total_disc:,}</span>
-  </div>
-  <div style="color:#7B241C; font-size:0.82rem; margin-top:3px;">
-    아래 행에 할인이 적용되었습니다. PDF에서도 해당 행/할인 셀이 연한 빨강으로 음영 강조됩니다.
-  </div>
-</div>
-                """,
-                unsafe_allow_html=True,
-            )
-            preview_cols = ["분류", "항목", "단가", "할인율(%)", "할인금액", "공급가", "비고"]
-            disc_preview = any_rows[preview_cols].copy()
-            st.dataframe(
-                disc_preview,
-                hide_index=True,
-                use_container_width=True,
-                column_config={
-                    "단가": st.column_config.NumberColumn("단가", format="₩%,d"),
-                    "할인율(%)": st.column_config.NumberColumn("할인율(%)", format="%d%%"),
-                    "할인금액": st.column_config.NumberColumn("할인금액", format="₩%,d"),
-                    "공급가": st.column_config.NumberColumn("공급가", format="₩%,d"),
-                },
-            )
-
     if not edited_df.empty:
         amounts = edited_df.apply(
             lambda r: _row_amount(r, df=edited_df), axis=1
@@ -3428,63 +3367,6 @@ def render_membership_quote_page():
         st.session_state.mc_items_df = edited_core
         if changed:
             st.rerun()
-
-        # ── 할인 적용 미리보기 (QR 과 동일 — 할인행 + 항목별 할인 행 모두) ──
-        disc_mask = mc_edited_df["분류"].astype(str) == ITEM_KIND_DISCOUNT
-        item_disc_mask = (
-            (pd.to_numeric(mc_edited_df["할인율(%)"], errors="coerce").fillna(0) > 0)
-            | (pd.to_numeric(mc_edited_df["할인금액"], errors="coerce").fillna(0) > 0)
-        ) & ~disc_mask
-        combined_mask = disc_mask | item_disc_mask
-        any_rows = mc_edited_df[combined_mask]
-        if not any_rows.empty:
-            disc_amounts = mc_edited_df[disc_mask].apply(
-                lambda r: _mc_row_amount(r, df=mc_edited_df), axis=1
-            )
-            disc_total_row = int(pd.to_numeric(disc_amounts, errors="coerce").fillna(0).sum())
-            item_disc_total = 0
-            for _, r in mc_edited_df[item_disc_mask].iterrows():
-                price = r.get("단가")
-                if not (pd.notna(price) and price):
-                    continue
-                try:
-                    gross = int(price)
-                except (TypeError, ValueError):
-                    continue
-                d_amt = r.get("할인금액")
-                d_rate = r.get("할인율(%)")
-                if pd.notna(d_amt) and d_amt:
-                    item_disc_total += int(d_amt)
-                elif pd.notna(d_rate) and d_rate:
-                    item_disc_total += int(round(gross * float(d_rate) / 100))
-            total_disc = abs(disc_total_row) + item_disc_total
-            st.markdown(
-                f"""
-<div style="background:#FDECEA; border-left:4px solid #C0392B;
-            border-radius:6px; padding:10px 14px; margin:6px 0 4px;">
-  <div style="color:#C0392B; font-weight:700; font-size:0.95rem;">
-    💰 할인 적용 내역 · {len(any_rows)}건 · 차감 합계 <span style="font-size:1.05rem">₩{total_disc:,}</span>
-  </div>
-  <div style="color:#7B241C; font-size:0.82rem; margin-top:3px;">
-    아래 행에 할인이 적용되었습니다. PDF에서도 해당 셀이 연한 빨강으로 음영 강조됩니다.
-  </div>
-</div>
-                """,
-                unsafe_allow_html=True,
-            )
-            preview_cols = ["분류", "상세 구분", "단가", "할인율(%)", "할인금액", "공급가", "비고"]
-            disc_preview = any_rows[preview_cols].copy()
-            st.dataframe(
-                disc_preview,
-                hide_index=True,
-                use_container_width=True,
-                column_config={
-                    "단가": st.column_config.NumberColumn("단가", format="₩%,d"),
-                    "할인율(%)": st.column_config.NumberColumn("할인율(%)", format="%d%%"),
-                    "할인금액": st.column_config.NumberColumn("할인금액", format="₩%,d"),
-                    "공급가": st.column_config.NumberColumn("공급가", format="₩%,d"),
-                },
-            )
 
     # 합계
     if not (isinstance(mc_edited_df, pd.DataFrame) and mc_edited_df.empty):
