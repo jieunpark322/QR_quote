@@ -48,6 +48,13 @@
       "description": "- 비용 청구: 일시납 (1회성 비용)\n- 제공 품목: 매장당 1매 (A3 사이즈)\n- 포함 기능: QR코드 연동 (모바일 메뉴판 기능)",
       "unit_price": 20000,
       "currency": "KRW"
+    },
+    {
+      "code": "a",
+      "name": "a",
+      "description": "a",
+      "unit_price": 1000,
+      "currency": "KRW"
     }
   ]
 }
