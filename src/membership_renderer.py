@@ -15,7 +15,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
-from .renderer import _force_fixed_column_widths
+from .renderer import _force_fixed_column_widths, _disable_auto_space_doc
 from .membership_models import (
     MembershipCategory,
     MembershipLineItem,
@@ -1003,6 +1003,9 @@ def render_membership_docx(brand: Brand, document: MembershipQuoteDocument,
                                 total_discount_rate=document.total_discount_rate)
         _render_remarks(doc, document, brand)
         _render_signature_qr_style(doc, document, brand)
+
+    # 한글-숫자 사이 자동 공백 제거 (모든 단락 일괄)
+    _disable_auto_space_doc(doc)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(output_path))

@@ -134,6 +134,27 @@ def _force_fixed_column_widths(table, widths) -> None:
             tc_pr.append(tcW)
 
 
+def _disable_auto_space_doc(doc) -> None:
+    """문서 내 모든 단락의 autoSpaceDE/DN 을 0으로 설정.
+
+    동아시아(한글)과 라틴/숫자가 이웃할 때 LibreOffice/Word 가 약 1/4 스페이스
+    폭을 자동 삽입하는 기본 동작을 비활성화한다. "2026-06-26 까지" 같은 표현이
+    스페이스 한 칸 더 들어간 것처럼 보이는 현상 제거.
+    """
+    body = doc.element.body
+    for p in body.iter(qn("w:p")):
+        p_pr = p.find(qn("w:pPr"))
+        if p_pr is None:
+            p_pr = OxmlElement("w:pPr")
+            p.insert(0, p_pr)
+        for tag in ("w:autoSpaceDE", "w:autoSpaceDN"):
+            for old in p_pr.findall(qn(tag)):
+                p_pr.remove(old)
+            elem = OxmlElement(tag)
+            elem.set(qn("w:val"), "0")
+            p_pr.append(elem)
+
+
 def _apply_font(run, font_name: str, *, size_pt: float | None = None,
                 bold: bool = False, color: RGBColor | None = None) -> None:
     run.font.name = font_name
@@ -965,6 +986,9 @@ def render_docx(brand: Brand, document: QuoteDocument, project_root: Path,
         _render_etc_notice(doc, brand, document, labels)
         _render_clauses(doc, brand, document, project_root)
         _render_signature(doc, brand, document, labels)
+
+    # 한글-숫자 사이 자동 공백 제거 (모든 단락 일괄)
+    _disable_auto_space_doc(doc)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(output_path))
