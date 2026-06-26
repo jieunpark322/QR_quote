@@ -1724,6 +1724,75 @@ def render_catalog_page():
         "탭으로 견적서 종류별로 관리할 수 있어요."
     )
 
+    # ── ⚠ 영구 저장 안내 + 백업/복원 ──
+    with st.expander("⚠ 데이터 영구 저장 안내 · 백업/복원", expanded=False):
+        st.markdown(
+            "<div style='background:#FEF3C7; border-left:4px solid #D97706;"
+            "padding:10px 14px; border-radius:6px; color:#78350F; font-size:0.9rem'>"
+            "<strong>Streamlit Cloud 한계로 변경사항이 영구 저장되지 않습니다.</strong><br>"
+            "이 페이지에서 저장된 품목은 컨테이너가 잠시 멈추거나 재배포될 때 "
+            "GitHub 저장소 상태로 초기화됩니다. <br>"
+            "**영구 보존 방법** ① 아래 '📥 다운로드' 로 JSON 백업 → "
+            "GitHub 저장소의 <code>catalog/</code> 폴더에 직접 commit/push, "
+            "또는 ② 다음 세션 시작 시 '📤 업로드' 로 백업본 복원."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        st.write("")  # spacer
+
+        for kind, label, fname in [
+            ("qr", "📋 QR오더 품목", "products.json"),
+            ("outdoor", "🌳 [야외형] QR오더 품목", "qr_outdoor_products.json"),
+            ("membership", "🏢 멤버십 품목", "membership_products.json"),
+        ]:
+            with st.container(border=True):
+                c1, c2, c3 = st.columns([3, 2, 2])
+                with c1:
+                    st.markdown(f"**{label}**<br>"
+                                f"<span style='color:#6B7280;font-size:0.82rem'>"
+                                f"catalog/{fname}</span>",
+                                unsafe_allow_html=True)
+                with c2:
+                    # 현재 카탈로그 JSON 다운로드
+                    if kind == "membership":
+                        cur_products = _load_membership_products()
+                    else:
+                        cur_products = _load_products_for(kind)
+                    json_bytes = json.dumps(
+                        {"products": cur_products},
+                        ensure_ascii=False, indent=2,
+                    ).encode("utf-8")
+                    st.download_button(
+                        "📥 다운로드",
+                        data=json_bytes,
+                        file_name=fname,
+                        mime="application/json",
+                        use_container_width=True,
+                        key=f"dl_{kind}",
+                    )
+                with c3:
+                    uploaded = st.file_uploader(
+                        "📤 업로드(JSON)", type=["json"],
+                        key=f"up_{kind}",
+                        label_visibility="collapsed",
+                    )
+                    if uploaded is not None:
+                        try:
+                            payload = json.loads(uploaded.read().decode("utf-8"))
+                            new_products = payload.get("products", [])
+                            if not isinstance(new_products, list):
+                                st.error("올바른 형식이 아닙니다.")
+                            else:
+                                if kind == "membership":
+                                    _save_membership_products(new_products)
+                                else:
+                                    _save_products_for(kind, new_products)
+                                st.success(f"✅ {len(new_products)}개 상품 복원 완료")
+                                st.session_state.pop(f"up_{kind}", None)
+                                st.rerun()
+                        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                            st.error(f"파일 읽기 실패: {e}")
+
     tab_qr, tab_out, tab_mc = st.tabs([
         "📋 QR오더 품목",
         "🌳 [야외형] QR오더 품목",
@@ -1919,6 +1988,10 @@ def _render_qr_catalog_editor(catalog_kind: str = "qr"):
         st.success(
             f"✅ **{count}개 상품 저장 완료** ({ts}) · "
             f"'{page_name}' 페이지에 즉시 반영됩니다."
+        )
+        st.caption(
+            "⚠ 영구 보존을 원하면 상단 **'⚠ 데이터 영구 저장 안내 · 백업/복원'** "
+            "패널에서 📥 JSON 다운로드 → GitHub 저장소 `catalog/` 폴더에 commit/push 해 주세요."
         )
 
     # ── 미저장 변경 감지 → 페이지 이탈 시 브라우저 경고 ──
