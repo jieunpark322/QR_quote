@@ -1141,43 +1141,52 @@ def render_quote_page(catalog_kind: str = "qr"):
     st.subheader("3. 품목 내역")
     if catalog_kind == "outdoor":
         st.caption(
-            "💡 품목 선택 또는 '+ 빈 행' 으로 추가. 할인은 **'+ 할인 행'**. "
-            "후불(QR결제액 기준 후청구) 항목은 **품목 관리** 에서 청구 방식이 "
-            "'후불(%)' 로 설정된 항목을 골라 추가하면 자동 분류됩니다."
+            "💡 품목 드롭다운에서 선택하면 자동으로 표에 추가됩니다. "
+            "빈 행/할인 행은 버튼, 후불(QR결제%) 항목은 **품목 관리** 에서 "
+            "청구 방식이 '후불(%)' 로 설정된 항목을 선택하면 자동 분류됩니다. "
+            "삭제는 행 첫 컬럼 **'🗑'** 체크 후 우측 상단 **'🗑 선택 삭제'** 클릭."
         )
     else:
         st.caption(
-            "💡 품목 선택 또는 '+ 빈 행' 으로 추가. 할인은 **'+ 할인 행'** 클릭. "
-            "할인 행에는 **단가** 또는 **할인율(%)** 입력 — **할인율(%)** 은 일반 품목 "
-            "합계의 N% 만큼 일괄 차감됩니다."
+            "💡 품목 드롭다운에서 선택하면 자동으로 표에 추가됩니다. "
+            "할인은 **'💰 + 할인 행'** 클릭. "
+            "삭제는 행 첫 컬럼 **'🗑'** 체크 후 우측 상단 **'🗑 선택 삭제'** 클릭."
         )
 
-    pick_col, add_col, blank_col, disc_col, reset_col = st.columns(
-        [5, 1.2, 1.2, 1.2, 1.2]
+    # 품목 selectbox on_change 콜백 — 선택만 해도 자동 행 추가 후 selectbox 리셋
+    def _on_catalog_pick():
+        idx = st.session_state.get("catalog_pick")
+        if idx is None:
+            return
+        try:
+            i = int(idx)
+            if 0 <= i < len(products):
+                _add_catalog_row(products[i])
+        except (TypeError, ValueError):
+            pass
+        # 다음 선택을 위해 셀렉트박스 비움
+        st.session_state["catalog_pick"] = None
+
+    pick_col, blank_col, disc_col, del_col, reset_col = st.columns(
+        [5.2, 1.2, 1.3, 1.3, 1.2]
     )
     with pick_col:
         if products:
             options = list(range(len(products)))
-            picked_idx = st.selectbox(
-                "품목에서 추가",
+            st.selectbox(
+                "품목 추가",
                 options=options,
                 index=None,
                 format_func=lambda i: (
                     f"{products[i]['name']} · ₩{int(products[i].get('unit_price', 0)):,}"
                 ),
-                placeholder="상품 선택 (입력해서 검색 가능)...",
+                placeholder="품목 선택 → 자동으로 표에 추가됩니다 (검색 가능)...",
                 key="catalog_pick",
+                on_change=_on_catalog_pick,
                 label_visibility="collapsed",
             )
         else:
             st.info("품목이 비어있습니다. '품목 관리' 페이지에서 상품을 추가하세요.")
-            picked_idx = None
-    with add_col:
-        if st.button("+ 추가", use_container_width=True,
-                     disabled=picked_idx is None,
-                     help="선택한 품목을 표에 추가합니다."):
-            _add_catalog_row(products[picked_idx])
-            st.rerun()
     with blank_col:
         if st.button("+ 빈 행", use_container_width=True):
             _add_blank_row()
@@ -1187,6 +1196,12 @@ def render_quote_page(catalog_kind: str = "qr"):
                      help="음수 단가 행이 자동 추가됩니다. 협상 금액으로 단가 조정 가능."):
             _add_discount_row()
             st.rerun()
+    with del_col:
+        del_clicked = st.button(
+            "🗑 선택 삭제", use_container_width=True,
+            help="첫 컬럼 '🗑' 체크박스로 선택한 행만 삭제합니다.",
+            key="qr_del_selected",
+        )
     with reset_col:
         if st.button("전체 초기화", use_container_width=True,
                      key="qr_reset_request"):
@@ -1276,10 +1291,16 @@ def render_quote_page(catalog_kind: str = "qr"):
             zero_price = display_df["단가"].fillna(0) == 0
             display_df.loc[deferred_mask & zero_price, "단가"] = pd.NA
         display_df = display_df[DISPLAY_COLUMNS]
+        # 첫 컬럼에 선택용 체크박스 — '🗑 선택 삭제' 버튼이 활용
+        display_df.insert(0, "🗑", False)
 
         edited_df = st.data_editor(
             display_df,
             column_config={
+                "🗑": st.column_config.CheckboxColumn(
+                    "🗑", width="small", default=False,
+                    help="삭제할 행을 체크 후 우측 상단 '🗑 선택 삭제' 클릭",
+                ),
                 "분류": st.column_config.SelectboxColumn(
                     "분류", options=ITEM_KINDS, required=True, width="small",
                     help=("'💰 할인행': 단가를 입력하면 자동 차감 처리. "
@@ -1316,12 +1337,26 @@ def render_quote_page(catalog_kind: str = "qr"):
                 ),
                 "비고": st.column_config.TextColumn("비고", width="medium"),
             },
-            num_rows="dynamic",
+            num_rows="fixed",
             use_container_width=True,
             hide_index=True,
             key="items_editor",
         )
-        # 편집 가능 컬럼만 세션에 저장
+        # ── '🗑 선택 삭제' 처리: 체크된 행만 items_df 에서 제거 ──
+        if del_clicked:
+            try:
+                mask_del = edited_df["🗑"].fillna(False).astype(bool).tolist()
+                if any(mask_del):
+                    new_df = edited_df.loc[[not m for m in mask_del]][ITEM_COLUMNS].reset_index(drop=True)
+                    st.session_state.items_df = new_df
+                    st.toast(f"🗑 {sum(mask_del)}개 행 삭제", icon="🗑")
+                    st.rerun()
+                else:
+                    st.toast("삭제할 행을 첫 컬럼 '🗑' 체크박스로 선택하세요",
+                             icon="ℹ️")
+            except KeyError:
+                pass
+        # 편집 가능 컬럼만 세션에 저장 ('🗑' 선택 컬럼은 제외)
         edited_core = edited_df[ITEM_COLUMNS]
         # 공급가가 입력 변경에 따라 즉시 갱신되도록 — 변경 감지 시 rerun
         old = st.session_state.items_df.reset_index(drop=True)
