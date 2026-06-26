@@ -1902,9 +1902,24 @@ def _render_qr_catalog_editor(catalog_kind: str = "qr"):
             new_products.append(item)
         _save_products_for(catalog_kind, new_products)
         st.session_state[sig_key] = _qr_catalog_signature(new_products)
+        from datetime import datetime
         page_name = CATALOG_LABELS.get(catalog_kind, "QR오더 견적기")
-        st.success(f"✅ {len(new_products)}개 상품 저장 완료. "
-                   f"'{page_name}' 페이지에서 즉시 반영됩니다.")
+        # 다음 rerun 에서 저장 완료 안내가 보이도록 토스트 + 세션 마커
+        st.toast(f"✅ {len(new_products)}개 상품 저장 완료",
+                 icon="✅")
+        st.session_state[f"_catalog_saved_at_{catalog_kind}"] = (
+            _now_kst().strftime("%H:%M:%S"), len(new_products), page_name
+        )
+        st.rerun()
+
+    # ── 저장 직후 결과 안내 (저장 버튼 바로 아래) ──
+    saved_marker = st.session_state.get(f"_catalog_saved_at_{catalog_kind}")
+    if saved_marker:
+        ts, count, page_name = saved_marker
+        st.success(
+            f"✅ **{count}개 상품 저장 완료** ({ts}) · "
+            f"'{page_name}' 페이지에 즉시 반영됩니다."
+        )
 
     # ── 미저장 변경 감지 → 페이지 이탈 시 브라우저 경고 ──
     current_snapshot = [
@@ -1927,6 +1942,8 @@ def _render_qr_catalog_editor(catalog_kind: str = "qr"):
     dirty = _qr_catalog_signature(current_snapshot) != st.session_state.get(sig_key, "")
     if dirty:
         st.caption("⚠ **미저장 변경사항이 있습니다.** 우측 상단 '💾 저장' 버튼을 눌러주세요.")
+        # 사용자가 다시 편집했으므로 이전 저장 완료 메시지 제거
+        st.session_state.pop(f"_catalog_saved_at_{catalog_kind}", None)
     _inject_beforeunload(dirty)
 
 
