@@ -1,5 +1,4 @@
 {
-  "_doc": "야외형 QR오더 견적기 카탈로그. 행사·페스티벌 단기 대여 패키지 기준. 청구기준·기간·매장수 등은 견적서 작성 화면에서 직접 입력.",
   "products": [
     {
       "code": "OUT-QRORDER",
@@ -55,8 +54,8 @@
       "name": "솔루션 사용료 (후청구)",
       "description": "행사 종료 후 QR오더 결제액 기준 정산 (후청구)",
       "unit_price": 5,
-      "billing_type": "deferred_percent",
-      "currency": "KRW"
+      "currency": "KRW",
+      "billing_type": "deferred_percent"
     }
   ]
 }
