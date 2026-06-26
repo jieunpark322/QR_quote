@@ -13,6 +13,41 @@
       "description": "매장 월 정액제",
       "unit_price": 100000,
       "currency": "KRW"
+    },
+    {
+      "code": "2026대구다국어",
+      "name": "[대구]QR 시스템/운영비",
+      "description": "매장당 / 월",
+      "unit_price": 19000,
+      "currency": "KRW"
+    },
+    {
+      "code": "2026대구다국어",
+      "name": "[대구]QR 주문, 메뉴판구축비",
+      "description": "일시금",
+      "unit_price": 5000000,
+      "currency": "KRW"
+    },
+    {
+      "code": "2026대구다국어",
+      "name": "[대구] 메뉴번역구축비",
+      "description": "매장당",
+      "unit_price": 30000,
+      "currency": "KRW"
+    },
+    {
+      "code": "2026대구다국어",
+      "name": "[대구]QR 카드제작비",
+      "description": "- 적용 기준: 200개 매장\n- 도입 수량: 매장당 30개 (총 6,000개)",
+      "unit_price": 6000000,
+      "currency": "KRW"
+    },
+    {
+      "code": "2026대구다국어",
+      "name": "홍보물A",
+      "description": "- 비용 청구: 일시납 (1회성 비용)\n- 제공 품목: 매장당 1매 (A3 사이즈)\n- 포함 기능: QR코드 연동 (모바일 메뉴판 기능)",
+      "unit_price": 20000,
+      "currency": "KRW"
     }
   ]
 }
