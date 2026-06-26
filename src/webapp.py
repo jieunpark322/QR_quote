@@ -1780,10 +1780,7 @@ def render_catalog_page():
         token_set = False
 
     if token_set:
-        st.success(
-            "🌐 **자동 영구 저장 활성화** — 품목을 저장하면 GitHub 에 자동 commit 됩니다. "
-            "누가 사용해도 데이터가 사라지지 않아요."
-        )
+        pass  # 영구 저장 활성화 상태 — 별도 안내 표시 안 함
     else:
         with st.expander(
             "⚠ **영구 저장 설정이 필요해요 (3분 소요 · 한 번만)** — 클릭해서 펼치기",
@@ -1978,6 +1975,16 @@ def _render_qr_catalog_editor(catalog_kind: str = "qr"):
         sync = st.session_state.get(f"_github_sync_{catalog_kind}")
         sync_ok = sync and sync[0]
         sync_msg = sync[1] if sync else ""
+        # GitHub 영구 저장 안내는 활성 상태에선 생략, 실패 시에만 경고 박스
+        warn_block = (
+            ""
+            if sync_ok else
+            f"""
+  <div style="color:#92400E; font-size:0.88rem; margin-top:8px;
+              background:#FEF3C7; padding:8px 12px; border-radius:6px;">
+    ⚠ <strong>임시 저장만 됨</strong> ({sync_msg}). 상단 영구 저장 설정을 진행하면 자동 영구 보존됩니다.
+  </div>"""
+        )
         st.markdown(
             f"""
 <div style="background:#ECFDF5; border:2px solid #10B981;
@@ -1988,15 +1995,7 @@ def _render_qr_catalog_editor(catalog_kind: str = "qr"):
   </div>
   <div style="color:#047857; font-size:0.92rem; margin-top:6px;">
     "{page_name}" 페이지에 즉시 반영됐어요.
-  </div>
-  <div style="color:{'#065F46' if sync_ok else '#92400E'};
-              font-size:0.88rem; margin-top:8px;
-              background:{'#D1FAE5' if sync_ok else '#FEF3C7'};
-              padding:8px 12px; border-radius:6px;">
-    {'🌐 <strong>GitHub 영구 저장 완료</strong> — 누가 사용해도 데이터가 사라지지 않습니다.'
-     if sync_ok else
-     f'⚠ <strong>임시 저장만 됨</strong> ({sync_msg}). 상단 영구 저장 설정을 진행하면 자동 영구 보존됩니다.'}
-  </div>
+  </div>{warn_block}
 </div>
             """,
             unsafe_allow_html=True,
