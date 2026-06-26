@@ -1523,7 +1523,7 @@ def render_quote_page(catalog_kind: str = "qr"):
     btn_prev, btn_gen = st.columns([1, 1])
     with btn_prev:
         preview_clicked = st.button(
-            "👁 미리보기 (PDF)", use_container_width=True,
+            "👁 미리보기", use_container_width=True,
             disabled=not soffice_available,
             help=("작성한 내용을 PDF로 렌더링해서 이 페이지 안에서 바로 확인합니다. "
                   "다운로드는 아래 '견적서 생성' 버튼을 누르세요.")
@@ -1755,7 +1755,7 @@ def _preview_quote(**kwargs):
     result = _build_quote_artifacts(status_label="미리보기 생성 중...", **kwargs)
     if result is None:
         return
-    document_id, _docx_bytes, pdf_bytes = result
+    document_id, docx_bytes, pdf_bytes = result
 
     if not pdf_bytes:
         st.error("❌ PDF 변환기(LibreOffice)를 사용할 수 없어 미리보기를 표시할 수 없습니다.")
@@ -1786,15 +1786,29 @@ def _preview_quote(**kwargs):
     except Exception as e:
         st.warning(f"이미지 미리보기를 사용할 수 없습니다 ({e}). 아래 다운로드로 확인하세요.")
 
-    # 항상 미리보기 PDF 다운로드 제공 (이미지 렌더 실패 시 fallback)
-    st.download_button(
-        ("📑 미리보기 PDF 다운로드" if rendered else "📑 미리보기 PDF 다운로드 (필수)"),
-        data=pdf_bytes,
-        file_name=f"preview_{document_id}.pdf",
-        mime="application/pdf",
-        use_container_width=True,
-    )
-    st.caption("💡 미리보기는 화면 표시용입니다. 정식 파일은 '📝 견적서 생성' 버튼을 누르세요.")
+    # DOCX + PDF 다운로드 (택1)
+    dl1, dl2 = st.columns(2)
+    with dl1:
+        if docx_bytes:
+            st.download_button(
+                "📝 DOCX 다운로드", data=docx_bytes,
+                file_name=f"{document_id}.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                use_container_width=True,
+                key=f"dl_docx_preview_{document_id}",
+            )
+        else:
+            st.button("📝 DOCX 사용 불가", disabled=True,
+                      use_container_width=True,
+                      key=f"dl_docx_preview_disabled_{document_id}")
+    with dl2:
+        st.download_button(
+            "📑 PDF 다운로드", data=pdf_bytes,
+            file_name=f"{document_id}.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+            key=f"dl_pdf_preview_{document_id}",
+        )
 
 
 # ═════════════════════════════════════════════════════════════
@@ -3526,7 +3540,7 @@ def render_membership_quote_page():
     with btn_preview:
         preview_disabled = (not can_generate) or (not soffice_available)
         preview_clicked = st.button(
-            "👁 미리보기 (PDF)", use_container_width=True,
+            "👁 미리보기", use_container_width=True,
             disabled=preview_disabled,
             help=(
                 "현재 입력값으로 PDF 미리보기를 표시합니다."
@@ -3890,7 +3904,7 @@ def _preview_membership_quote(state: dict, soffice_available: bool,
     )
     if result is None:
         return
-    document_id, _docx_bytes, pdf_bytes = result
+    document_id, docx_bytes, pdf_bytes = result
 
     if not pdf_bytes:
         st.error("❌ PDF 변환기(LibreOffice)를 사용할 수 없어 미리보기를 표시할 수 없습니다.")
@@ -3916,14 +3930,29 @@ def _preview_membership_quote(state: dict, soffice_available: bool,
     except Exception as e:
         st.warning(f"이미지 미리보기를 사용할 수 없습니다 ({e}). 아래 다운로드로 확인하세요.")
 
-    st.download_button(
-        ("📑 미리보기 PDF 다운로드" if rendered else "📑 미리보기 PDF 다운로드 (필수)"),
-        data=pdf_bytes,
-        file_name=f"preview_{document_id}.pdf",
-        mime="application/pdf",
-        use_container_width=True,
-    )
-    st.caption("💡 미리보기는 화면 표시용입니다. 정식 파일은 '📝 멤버십 견적서 생성' 버튼을 누르세요.")
+    # DOCX + PDF 다운로드 (택1)
+    dl1, dl2 = st.columns(2)
+    with dl1:
+        if docx_bytes:
+            st.download_button(
+                "📝 DOCX 다운로드", data=docx_bytes,
+                file_name=f"{document_id}.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                use_container_width=True,
+                key=f"dl_docx_mc_preview_{document_id}",
+            )
+        else:
+            st.button("📝 DOCX 사용 불가", disabled=True,
+                      use_container_width=True,
+                      key=f"dl_docx_mc_preview_disabled_{document_id}")
+    with dl2:
+        st.download_button(
+            "📑 PDF 다운로드", data=pdf_bytes,
+            file_name=f"{document_id}.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+            key=f"dl_pdf_mc_preview_{document_id}",
+        )
 
 
 # ═════════════════════════════════════════════════════════════
