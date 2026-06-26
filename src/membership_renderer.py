@@ -15,7 +15,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
-from .renderer import _force_fixed_column_widths
+from .renderer import _force_fixed_column_widths, _set_cell_right_margin_cm
 from .membership_models import (
     MembershipCategory,
     MembershipLineItem,
@@ -338,6 +338,8 @@ def _render_header_qr_style(doc, document: MembershipQuoteDocument,
     right.width = RIGHT_W
     _vcenter(left)
     _vcenter(right)
+    # 우측 발행정보 박스를 오른쪽 여백으로부터 1cm 안쪽으로 밀어 배치
+    _set_cell_right_margin_cm(right, 1.0)
 
     # 좌측: 회사명 + 회사 정보
     p = left.paragraphs[0]

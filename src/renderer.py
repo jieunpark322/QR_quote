@@ -55,6 +55,21 @@ def _zero_cell_lr_margin(cell) -> None:
         existing.append(m)
 
 
+def _set_cell_right_margin_cm(cell, cm_value: float) -> None:
+    """셀의 오른쪽 padding(margin)을 cm 단위로 지정. 우측 셀 내용을 좌측으로 미는 용도."""
+    tc_pr = cell._tc.get_or_add_tcPr()
+    existing = tc_pr.find(qn("w:tcMar"))
+    if existing is None:
+        existing = OxmlElement("w:tcMar")
+        tc_pr.append(existing)
+    for old in existing.findall(qn("w:right")):
+        existing.remove(old)
+    m = OxmlElement("w:right")
+    m.set(qn("w:w"), str(int(cm_value * 567)))  # 1cm = 567 dxa
+    m.set(qn("w:type"), "dxa")
+    existing.append(m)
+
+
 def _set_table_borders(table, color: str = "BFBFBF", size: int = 4) -> None:
     """표 전체에 격자선을 추가. size는 1/8 pt 단위 (4 = 0.5pt)."""
     tbl_pr = table._tbl.tblPr
@@ -208,6 +223,8 @@ def _render_header(doc, brand: Brand, document: QuoteDocument,
     _vcenter(right)
     # 좌측 셀 padding 제거 → "(주)소프트먼트" 가 페이지 여백과 정확히 정렬
     _zero_cell_lr_margin(left)
+    # 우측 발행정보 박스를 페이지 오른쪽 여백으로부터 1cm 안쪽으로 밀어 배치
+    _set_cell_right_margin_cm(right, 1.0)
 
     p = left.paragraphs[0]
     p.paragraph_format.space_before = Pt(0)
