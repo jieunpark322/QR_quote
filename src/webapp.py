@@ -3940,18 +3940,35 @@ def main():
         "📦 품목 관리",
         "⚙ 기본 설정",
     ]
+    ALL_PAGES = QUOTE_PAGES + SETTING_PAGES
 
-    # 처음 진입: 견적기 그룹의 첫 항목만 활성, 설정 그룹은 비어 있음
+    # 첫 진입 시: URL ?page=... 쿼리 파라미터로 마지막 페이지 복원 (새로고침 보존)
     if "menu_quote" not in st.session_state and "menu_setting" not in st.session_state:
-        st.session_state["menu_quote"] = QUOTE_PAGES[0]
-        st.session_state["menu_setting"] = None
+        saved = st.query_params.get("page") or QUOTE_PAGES[0]
+        if saved in QUOTE_PAGES:
+            st.session_state["menu_quote"] = saved
+            st.session_state["menu_setting"] = None
+        elif saved in SETTING_PAGES:
+            st.session_state["menu_quote"] = None
+            st.session_state["menu_setting"] = saved
+        else:
+            st.session_state["menu_quote"] = QUOTE_PAGES[0]
+            st.session_state["menu_setting"] = None
 
-    # 한 그룹 클릭 시 다른 그룹 자동 선택 해제 → 시각적으로도 하나만 활성
+    # 한 그룹 클릭 시 다른 그룹 자동 선택 해제 + URL 갱신
     def _on_quote_change():
         st.session_state["menu_setting"] = None
+        try:
+            st.query_params["page"] = st.session_state.get("menu_quote") or QUOTE_PAGES[0]
+        except Exception:
+            pass
 
     def _on_setting_change():
         st.session_state["menu_quote"] = None
+        try:
+            st.query_params["page"] = st.session_state.get("menu_setting") or SETTING_PAGES[0]
+        except Exception:
+            pass
 
     with st.sidebar:
         st.markdown("### 📑 견적기")
@@ -3971,6 +3988,12 @@ def main():
     page = (st.session_state.get("menu_quote")
             or st.session_state.get("menu_setting")
             or QUOTE_PAGES[0])
+    # URL 쿼리에도 현재 페이지 동기화 (새로고침 시 복원용)
+    try:
+        if st.query_params.get("page") != page:
+            st.query_params["page"] = page
+    except Exception:
+        pass
 
     if page == "📋 QR오더 견적기":
         render_quote_page(catalog_kind="qr")
