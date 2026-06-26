@@ -498,22 +498,31 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
             break
 
     if chosen_font_pt is None:
-        # 가장 작은 폰트로도 안 들어감 — 최소 폰트 + 비고/설명 차례로 양보
+        # 가장 작은 폰트로도 안 들어감 — 설명을 먼저 양보(설명은 자체 \n 줄바꿈으로
+        # 자연스럽게 wrap 됨), 그래도 부족하면 비고 양보
         chosen_font_pt = min(CHAR_CM_BY_PT.keys())
         raw_widths = _widths_for(CHAR_CM_BY_PT[chosen_font_pt])
         excess = sum(raw_widths) - USABLE_WIDTH
-        # 1) 비고 먼저 양보
+        # 1) 설명 먼저 양보 (최소 2.5cm 까지)
         for i, c in enumerate(active_cols):
-            if c[0] == "notes":
-                give = min(excess, raw_widths[i] - 0.5)
+            if c[0] == "description":
+                give = min(excess, max(raw_widths[i] - 2.5, 0))
                 raw_widths[i] -= give
                 excess -= give
                 break
-        # 2) 그래도 초과면 설명 양보 (한 줄 보장 깨질 수 있음)
+        # 2) 그래도 초과면 비고 양보 (최소 2.5cm 까지)
         if excess > 0:
             for i, c in enumerate(active_cols):
-                if c[0] == "description":
-                    raw_widths[i] = max(raw_widths[i] - excess, 3.0)
+                if c[0] == "notes":
+                    give = min(excess, max(raw_widths[i] - 2.5, 0))
+                    raw_widths[i] -= give
+                    excess -= give
+                    break
+        # 3) 그래도 초과면 항목 양보 (최소 2.5cm 까지)
+        if excess > 0:
+            for i, c in enumerate(active_cols):
+                if c[0] == "name":
+                    raw_widths[i] = max(raw_widths[i] - excess, 2.5)
                     break
     else:
         # 남는 폭은 긴 컬럼(설명·항목·비고)에 가중 분배
