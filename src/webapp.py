@@ -743,16 +743,65 @@ def _load_products() -> list[dict]:
     return _load_products_for("qr")
 
 
+def _push_to_github(file_path: str, content_bytes: bytes,
+                    message: str) -> tuple[bool, str]:
+    """GitHub repo 의 파일을 자동 commit + push.
+    Streamlit secrets 에 GITHUB_TOKEN 이 없으면 (False, 사유) 반환.
+    """
+    import base64
+    try:
+        import requests
+    except ImportError:
+        return False, "requests 모듈 없음"
+    try:
+        token = st.secrets.get("GITHUB_TOKEN")
+        owner = st.secrets.get("GITHUB_OWNER", "jieunpark322")
+        repo = st.secrets.get("GITHUB_REPO", "QR_quote")
+        branch = st.secrets.get("GITHUB_BRANCH", "main")
+    except Exception:
+        return False, "secrets 접근 실패"
+    if not token:
+        return False, "GITHUB_TOKEN 미설정 (수동 백업 모드)"
+    api = f"https://api.github.com/repos/{owner}/{repo}/contents/{file_path}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    try:
+        resp = requests.get(api, headers=headers, params={"ref": branch}, timeout=10)
+        sha = resp.json().get("sha") if resp.status_code == 200 else None
+        payload = {
+            "message": message,
+            "content": base64.b64encode(content_bytes).decode("ascii"),
+            "branch": branch,
+        }
+        if sha:
+            payload["sha"] = sha
+        resp = requests.put(api, headers=headers, json=payload, timeout=15)
+        if resp.status_code in (200, 201):
+            return True, "GitHub 영구 저장 완료"
+        return False, f"PUT {resp.status_code}: {resp.text[:120]}"
+    except Exception as e:  # noqa: BLE001
+        return False, f"네트워크 오류: {e}"
+
+
 def _save_products_for(catalog_kind: str, products: list[dict]) -> None:
     fname = CATALOG_FILES.get(catalog_kind, "products.json")
     path = PROJECT_ROOT / "catalog" / fname
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps({"products": products}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    payload_bytes = json.dumps(
+        {"products": products}, ensure_ascii=False, indent=2
+    ).encode("utf-8")
+    path.write_bytes(payload_bytes)
     _load_products_for.clear()
     _load_products.clear()
+    # GitHub 자동 commit (secrets 에 토큰 있으면)
+    ok, msg = _push_to_github(
+        f"catalog/{fname}", payload_bytes,
+        f"품목 관리({catalog_kind}): {len(products)}개 저장"
+    )
+    st.session_state[f"_github_sync_{catalog_kind}"] = (ok, msg)
 
 
 def _save_products(products: list[dict]) -> None:
@@ -1989,10 +2038,17 @@ def _render_qr_catalog_editor(catalog_kind: str = "qr"):
             f"✅ **{count}개 상품 저장 완료** ({ts}) · "
             f"'{page_name}' 페이지에 즉시 반영됩니다."
         )
-        st.caption(
-            "⚠ 영구 보존을 원하면 상단 **'⚠ 데이터 영구 저장 안내 · 백업/복원'** "
-            "패널에서 📥 JSON 다운로드 → GitHub 저장소 `catalog/` 폴더에 commit/push 해 주세요."
-        )
+        # GitHub 자동 sync 결과 안내
+        sync = st.session_state.get(f"_github_sync_{catalog_kind}")
+        if sync:
+            ok, sync_msg = sync
+            if ok:
+                st.caption(f"🌐 **{sync_msg}** — GitHub 저장소에 commit 되어 영구 보존됩니다.")
+            else:
+                st.caption(
+                    f"⚠ GitHub 자동 저장 실패 ({sync_msg}). "
+                    f"상단 '⚠ 데이터 영구 저장 안내 · 백업/복원' 패널에서 수동 백업 가능."
+                )
 
     # ── 미저장 변경 감지 → 페이지 이탈 시 브라우저 경고 ──
     current_snapshot = [
@@ -2494,9 +2550,17 @@ def _load_membership_products() -> list[dict]:
 def _save_membership_products(products: list[dict]) -> None:
     path = PROJECT_ROOT / "catalog" / "membership_products.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"products": products}, ensure_ascii=False, indent=2),
-                    encoding="utf-8")
+    payload_bytes = json.dumps(
+        {"products": products}, ensure_ascii=False, indent=2
+    ).encode("utf-8")
+    path.write_bytes(payload_bytes)
     _load_membership_products.clear()
+    # GitHub 자동 commit
+    ok, msg = _push_to_github(
+        "catalog/membership_products.json", payload_bytes,
+        f"품목 관리(membership): {len(products)}개 저장",
+    )
+    st.session_state["_github_sync_membership"] = (ok, msg)
 
 
 def _load_membership_sample() -> dict:
