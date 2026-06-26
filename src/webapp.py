@@ -1221,7 +1221,7 @@ def render_quote_page(catalog_kind: str = "qr"):
             )
             cc1, cc2, _ = st.columns([1.2, 1.2, 4])
             with cc1:
-                if st.button("🗑 네, 초기화", type="primary",
+                if st.button("초기화 진행", type="primary",
                              use_container_width=True, key="qr_reset_yes"):
                     _reset_items()
                     st.session_state["_qr_reset_confirm"] = False
@@ -3291,7 +3291,7 @@ def render_membership_quote_page():
             )
             cc1, cc2, _ = st.columns([1.2, 1.2, 4])
             with cc1:
-                if st.button("🗑 네, 초기화", type="primary",
+                if st.button("초기화 진행", type="primary",
                              use_container_width=True, key="mc_items_reset_yes"):
                     st.session_state.mc_doc = _empty_membership_state()
                     st.session_state.mc_items_df = _mc_empty_items_df()
