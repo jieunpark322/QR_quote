@@ -205,8 +205,8 @@ def _render_header(doc, brand: Brand, document: QuoteDocument,
 
     # 발행자(좌)는 페이지 좌측 끝, 발행정보(우)는 페이지 우측 여백에서 1cm 안쪽으로 끝나도록
     # 표 자체를 좌측 정렬하고 전체 폭을 18.5cm 로 좁힘 (USABLE_WIDTH 19.5cm 중 우측 1cm 비움)
-    LEFT_W = Cm(12.5)
-    RIGHT_W = Cm(6.0)
+    LEFT_W = Cm(11.5)
+    RIGHT_W = Cm(7.0)
     info_table = doc.add_table(rows=1, cols=2)
     info_table.autofit = False
     info_table.alignment = WD_TABLE_ALIGNMENT.LEFT
@@ -268,9 +268,10 @@ def _render_header(doc, brand: Brand, document: QuoteDocument,
     inner = right.add_table(rows=len(info_rows), cols=2)
     inner.autofit = False
     inner.alignment = WD_TABLE_ALIGNMENT.RIGHT
-    # 우측 발행정보 표는 컴팩트하게 (라벨 1.5cm + 값 4.5cm = 6.0cm = RIGHT_W)
-    LABEL_W = Cm(1.5)
-    VALUE_W = Cm(4.5)
+    # 우측 발행정보 표 (라벨 2.0cm + 값 5.0cm = 7.0cm = RIGHT_W)
+    # 라벨 "유효기간"(4글자 bold)이 회색 음영 끝에 닿지 않도록 LABEL_W 여유 확보
+    LABEL_W = Cm(2.0)
+    VALUE_W = Cm(5.0)
     inner.columns[0].width = LABEL_W
     inner.columns[1].width = VALUE_W
     for idx, (label, value) in enumerate(info_rows):

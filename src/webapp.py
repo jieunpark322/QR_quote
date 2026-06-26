@@ -1073,7 +1073,6 @@ def render_quote_page(catalog_kind: str = "qr"):
     # ─── 메인 ───
     kind_label = CATALOG_LABELS.get(catalog_kind, "QR오더 견적기")
     st.title(f"📋 {kind_label}")
-    st.caption("폼을 채우고 '견적서 생성' 버튼을 누르면 DOCX/PDF 가 다운로드됩니다.")
 
     # ─── 최근 다운로드 견적서 (자동 기록) ───
     _render_qr_recent_panel()
@@ -1081,10 +1080,6 @@ def render_quote_page(catalog_kind: str = "qr"):
     _render_qr_template_panel()
 
     st.subheader("0. 발행 담당자 정보")
-    st.caption(
-        "이번 견적서에 표시될 **소프트먼트 측 담당자** 정보입니다. "
-        "비워두면 견적서에서 담당자 정보가 표시되지 않습니다."
-    )
     # Tab 키가 좌→우→다음 줄 순으로 이동하도록 행 단위로 columns 를 생성
     ic_r1_l, ic_r1_r = st.columns(2)
     with ic_r1_l:
@@ -1139,19 +1134,6 @@ def render_quote_page(catalog_kind: str = "qr"):
                             label_visibility="collapsed")
 
     st.subheader("3. 품목 내역")
-    if catalog_kind == "outdoor":
-        st.caption(
-            "💡 품목 드롭다운에서 선택하면 자동으로 표에 추가됩니다. "
-            "빈 행/할인 행은 버튼, 후불(QR결제%) 항목은 **품목 관리** 에서 "
-            "청구 방식이 '후불(%)' 로 설정된 항목을 선택하면 자동 분류됩니다. "
-            "삭제는 행 첫 컬럼 **'🗑'** 체크 후 우측 상단 **'🗑 선택 삭제'** 클릭."
-        )
-    else:
-        st.caption(
-            "💡 품목 드롭다운에서 선택하면 자동으로 표에 추가됩니다. "
-            "할인은 **'💰 + 할인 행'** 클릭. "
-            "삭제는 행 첫 컬럼 **'🗑'** 체크 후 우측 상단 **'🗑 선택 삭제'** 클릭."
-        )
 
     # 품목 selectbox on_change 콜백 — 선택만 해도 자동 행 추가 후 selectbox 리셋
     def _on_catalog_pick():
@@ -1378,7 +1360,6 @@ def render_quote_page(catalog_kind: str = "qr"):
         subtotal = int(pd.to_numeric(amounts, errors="coerce").fillna(0).sum())
 
         st.divider()
-        st.caption("📊 **공급가액 · 부가세 · 합계 금액**")
 
         vat_rate = labels.quote.vat_rate
         vat = int(round(subtotal * vat_rate))
@@ -3381,7 +3362,6 @@ def render_membership_quote_page():
         vat = int(round(subtotal * vat_rate))
         total = subtotal + vat
         st.divider()
-        st.caption("📊 **공급가액 · 부가세 · 합계 금액**")
         m1, m2, m3 = st.columns(3)
         m1.metric("공급가액", f"₩{subtotal:,}")
         m2.metric(f"부가세 ({int(vat_rate * 100)}%)", f"₩{vat:,}")

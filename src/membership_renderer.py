@@ -322,8 +322,8 @@ def _render_header_qr_style(doc, document: MembershipQuoteDocument,
                    space_after_pt=3)
 
     # 좌:회사정보 | 우:발급정보 — 우측 1cm 비워두기 위해 총 폭 18.5cm 로 좁힘
-    LEFT_W = Cm(12.5)
-    RIGHT_W = Cm(6.0)
+    LEFT_W = Cm(11.5)
+    RIGHT_W = Cm(7.0)
     info_table = doc.add_table(rows=1, cols=2)
     info_table.autofit = False
     info_table.alignment = WD_TABLE_ALIGNMENT.LEFT
@@ -375,8 +375,8 @@ def _render_header_qr_style(doc, document: MembershipQuoteDocument,
     inner = right.add_table(rows=len(info_rows), cols=2)
     inner.autofit = False
     inner.alignment = WD_TABLE_ALIGNMENT.RIGHT
-    LABEL_W = Cm(1.5)
-    VALUE_W = Cm(4.5)
+    LABEL_W = Cm(2.0)
+    VALUE_W = Cm(5.0)
     inner.columns[0].width = LABEL_W
     inner.columns[1].width = VALUE_W
     for idx, (label, value) in enumerate(info_rows):
