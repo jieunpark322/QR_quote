@@ -2003,44 +2003,10 @@ def _render_qr_catalog_editor(catalog_kind: str = "qr"):
             use_container_width=True, key=f"save_qr_catalog_{catalog_kind}",
         )
 
-    # ── 저장 직후 결과 안내 (저장 버튼 바로 아래 = 화면 상단) ──
+    # ── 저장 직후 화면 상단 토스트만 표시 (안내 row 제거) ──
     saved_marker = st.session_state.get(f"_catalog_saved_at_{catalog_kind}")
     if saved_marker:
         ts, count, page_name = saved_marker
-        sync = st.session_state.get(f"_github_sync_{catalog_kind}")
-        sync_ok = sync and sync[0]
-        sync_msg = sync[1] if sync else ""
-        # 저장 완료 카드 — 안쪽 우측에 ✕ 닫기 버튼 인라인 배치
-        with st.container(border=True):
-            text_col, btn_col = st.columns([6, 1])
-            with text_col:
-                st.markdown(
-                    f"""
-<div style="color:#065F46; font-weight:800; font-size:1.1rem;">
-  ✅ {count}개 상품 저장 완료
-  <span style="color:#6B7280;font-weight:500;font-size:0.85rem">({ts})</span>
-</div>
-<div style="color:#047857; font-size:0.9rem; margin-top:4px;">
-  "{page_name}" 페이지에 즉시 반영됐어요.
-</div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                if not sync_ok:
-                    st.markdown(
-                        f"""
-<div style="color:#92400E; font-size:0.85rem; margin-top:6px;
-            background:#FEF3C7; padding:6px 10px; border-radius:6px;">
-  ⚠ <strong>임시 저장만 됨</strong> ({sync_msg}). 상단 영구 저장 설정을 진행해 주세요.
-</div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-            with btn_col:
-                if st.button("✕ 닫기", key=f"close_saved_{catalog_kind}",
-                             use_container_width=True):
-                    st.session_state.pop(f"_catalog_saved_at_{catalog_kind}", None)
-                    st.rerun()
         # 화면 중간 상단에 5초간 떠 있는 fixed toast (HTML/CSS 만으로 자동 fade)
         from streamlit.components.v1 import html as _html
         _html(f"""
@@ -2077,7 +2043,8 @@ def _render_qr_catalog_editor(catalog_kind: str = "qr"):
 }})();
 </script>
 """, height=0)
-        # (닫기 버튼은 위 카드 안쪽 우측으로 이동됨)
+        # 한 번 표시 후 마커 제거 — 페이지 재방문/rerun 시 토스트가 다시 뜨지 않도록
+        st.session_state.pop(f"_catalog_saved_at_{catalog_kind}", None)
 
     # ── 드래그앤드롭 순서 변경 ──
     if len(df) > 1:
