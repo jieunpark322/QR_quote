@@ -15,7 +15,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
-from .renderer import _force_fixed_column_widths, _set_cell_right_margin_cm
+from .renderer import _force_fixed_column_widths
 from .membership_models import (
     MembershipCategory,
     MembershipLineItem,
@@ -321,9 +321,9 @@ def _render_header_qr_style(doc, document: MembershipQuoteDocument,
                    alignment=WD_ALIGN_PARAGRAPH.CENTER, color=primary,
                    space_after_pt=3)
 
-    # 좌:회사정보 (넓게) | 우:발급정보 (컴팩트) — 합 = USABLE_WIDTH 19.5cm
+    # 좌:회사정보 | 우:발급정보 — 우측 1cm 비워두기 위해 총 폭 18.5cm 로 좁힘
     LEFT_W = Cm(12.5)
-    RIGHT_W = Cm(7.0)
+    RIGHT_W = Cm(6.0)
     info_table = doc.add_table(rows=1, cols=2)
     info_table.autofit = False
     info_table.alignment = WD_TABLE_ALIGNMENT.LEFT
@@ -338,8 +338,6 @@ def _render_header_qr_style(doc, document: MembershipQuoteDocument,
     right.width = RIGHT_W
     _vcenter(left)
     _vcenter(right)
-    # 우측 발행정보 박스를 오른쪽 여백으로부터 1cm 안쪽으로 밀어 배치
-    _set_cell_right_margin_cm(right, 1.0)
 
     # 좌측: 회사명 + 회사 정보
     p = left.paragraphs[0]
@@ -378,7 +376,7 @@ def _render_header_qr_style(doc, document: MembershipQuoteDocument,
     inner.autofit = False
     inner.alignment = WD_TABLE_ALIGNMENT.RIGHT
     LABEL_W = Cm(1.5)
-    VALUE_W = Cm(4.8)
+    VALUE_W = Cm(4.5)
     inner.columns[0].width = LABEL_W
     inner.columns[1].width = VALUE_W
     for idx, (label, value) in enumerate(info_rows):

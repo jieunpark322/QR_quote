@@ -203,9 +203,10 @@ def _render_header(doc, brand: Brand, document: QuoteDocument,
     _add_paragraph(doc, title_text, font=font, size_pt=12, bold=True,
                    alignment=WD_ALIGN_PARAGRAPH.CENTER, color=primary, space_after_pt=3)
 
-    # 발행자(좌)를 넓게, 발행정보(우)를 우측 끝으로 컴팩트하게 — 합 = USABLE_WIDTH 19.5cm
+    # 발행자(좌)는 페이지 좌측 끝, 발행정보(우)는 페이지 우측 여백에서 1cm 안쪽으로 끝나도록
+    # 표 자체를 좌측 정렬하고 전체 폭을 18.5cm 로 좁힘 (USABLE_WIDTH 19.5cm 중 우측 1cm 비움)
     LEFT_W = Cm(12.5)
-    RIGHT_W = Cm(7.0)
+    RIGHT_W = Cm(6.0)
     info_table = doc.add_table(rows=1, cols=2)
     info_table.autofit = False
     info_table.alignment = WD_TABLE_ALIGNMENT.LEFT
@@ -223,8 +224,6 @@ def _render_header(doc, brand: Brand, document: QuoteDocument,
     _vcenter(right)
     # 좌측 셀 padding 제거 → "(주)소프트먼트" 가 페이지 여백과 정확히 정렬
     _zero_cell_lr_margin(left)
-    # 우측 발행정보 박스를 페이지 오른쪽 여백으로부터 1cm 안쪽으로 밀어 배치
-    _set_cell_right_margin_cm(right, 1.0)
 
     p = left.paragraphs[0]
     p.paragraph_format.space_before = Pt(0)
@@ -269,9 +268,9 @@ def _render_header(doc, brand: Brand, document: QuoteDocument,
     inner = right.add_table(rows=len(info_rows), cols=2)
     inner.autofit = False
     inner.alignment = WD_TABLE_ALIGNMENT.RIGHT
-    # 우측 발행정보 표는 컴팩트하게 (라벨 1.5cm + 값 4.8cm = 6.3cm)
+    # 우측 발행정보 표는 컴팩트하게 (라벨 1.5cm + 값 4.5cm = 6.0cm = RIGHT_W)
     LABEL_W = Cm(1.5)
-    VALUE_W = Cm(4.8)
+    VALUE_W = Cm(4.5)
     inner.columns[0].width = LABEL_W
     inner.columns[1].width = VALUE_W
     for idx, (label, value) in enumerate(info_rows):
