@@ -129,7 +129,7 @@ DISCOUNT_BG = "FDECEA"
 
 
 def _compute_section_widths(section: MembershipSection,
-                            usable_cm: float = 18.5) -> list:
+                            usable_cm: float = 19.0) -> list:
     """콘텐츠 길이 + 중요도 기반으로 컬럼 너비를 유동 산출.
 
     [구분, 분류, 상세 구분, 기간, 단가, 할인, 금액, 비고]
@@ -321,10 +321,10 @@ def _render_header_qr_style(doc, document: MembershipQuoteDocument,
                    alignment=WD_ALIGN_PARAGRAPH.CENTER, color=primary,
                    space_after_pt=3)
 
-    # 표 전체 폭 USABLE_WIDTH 18.5cm (페이지 좌 1.5cm + 우 1.0cm 여백)
-    # 우측 셀(7.5cm)을 inner 표(6.0cm)보다 1.5cm 넓게 잡아 좌측 1.5cm 여백 확보 (우측 정렬)
+    # 표 전체 폭 USABLE_WIDTH 19.0cm (페이지 좌 1.5cm + 우 0.5cm 여백)
+    # 우측 셀(8.0cm)을 inner 표(6.0cm)보다 2cm 넓게 잡아 좌측 2cm 여백 확보 (우측 정렬)
     LEFT_W = Cm(11.0)
-    RIGHT_W = Cm(7.5)
+    RIGHT_W = Cm(8.0)
     info_table = doc.add_table(rows=1, cols=2)
     info_table.autofit = False
     info_table.alignment = WD_TABLE_ALIGNMENT.LEFT
@@ -415,10 +415,10 @@ def _render_counterparty_qr_style(doc, document: MembershipQuoteDocument,
     cp = document.counterparty
     table = doc.add_table(rows=1, cols=1)
     table.alignment = WD_TABLE_ALIGNMENT.LEFT
-    table.columns[0].width = Cm(18.5)
-    _force_fixed_column_widths(table, [Cm(18.5)])
+    table.columns[0].width = Cm(19.0)
+    _force_fixed_column_widths(table, [Cm(19.0)])
     cell = table.rows[0].cells[0]
-    cell.width = Cm(18.5)
+    cell.width = Cm(19.0)
     _vcenter(cell)
     _set_cell_bg(cell, "FAFBFD")
 
@@ -983,7 +983,7 @@ def render_membership_docx(brand: Brand, document: MembershipQuoteDocument,
         section.top_margin = Cm(0.9)
         section.bottom_margin = Cm(0.9)
         section.left_margin = Cm(1.5)
-        section.right_margin = Cm(1.0)
+        section.right_margin = Cm(0.5)
 
     # QR 견적서와 동일한 흐름: 로고 → 헤더(회사+발급정보) → 수신처(제휴사) →
     # 단위 안내 → 섹션 표 → 합계 → 기타 안내 → 서명(날짜+회사명)
