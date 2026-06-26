@@ -455,8 +455,8 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
         6.0:  0.19,
     }
 
-    # 비고는 wrap 허용 — 긴 안내문구를 위한 max
-    NOTES_MAX = 3.0
+    # 비고는 wrap 허용 — 긴 안내문구가 1~2줄에 들어가도록 충분히 큰 max
+    NOTES_MAX = 5.0
 
     def _max_line_len(strings):
         m = 0
@@ -520,7 +520,7 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
         slack = USABLE_WIDTH - sum(raw_widths)
         if slack > 0.1:
             slack_weights_by_key = {
-                "description": 4.0, "name": 1.5, "notes": 1.0,
+                "description": 3.0, "name": 1.5, "notes": 3.0,
             }
             weights = [slack_weights_by_key.get(c[0], 0.0) for c in active_cols]
             wsum = sum(weights)
