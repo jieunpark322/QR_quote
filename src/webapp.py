@@ -1773,21 +1773,71 @@ def render_catalog_page():
         "탭으로 견적서 종류별로 관리할 수 있어요."
     )
 
-    # ── ⚠ 영구 저장 안내 + 백업/복원 ──
-    with st.expander("⚠ 데이터 영구 저장 안내 · 백업/복원", expanded=False):
-        st.markdown(
-            "<div style='background:#FEF3C7; border-left:4px solid #D97706;"
-            "padding:10px 14px; border-radius:6px; color:#78350F; font-size:0.9rem'>"
-            "<strong>Streamlit Cloud 한계로 변경사항이 영구 저장되지 않습니다.</strong><br>"
-            "이 페이지에서 저장된 품목은 컨테이너가 잠시 멈추거나 재배포될 때 "
-            "GitHub 저장소 상태로 초기화됩니다. <br>"
-            "**영구 보존 방법** ① 아래 '📥 다운로드' 로 JSON 백업 → "
-            "GitHub 저장소의 <code>catalog/</code> 폴더에 직접 commit/push, "
-            "또는 ② 다음 세션 시작 시 '📤 업로드' 로 백업본 복원."
-            "</div>",
-            unsafe_allow_html=True,
+    # ── 영구 저장 상태 확인 ──
+    try:
+        token_set = bool(st.secrets.get("GITHUB_TOKEN"))
+    except Exception:
+        token_set = False
+
+    if token_set:
+        st.success(
+            "🌐 **자동 영구 저장 활성화** — 품목을 저장하면 GitHub 에 자동 commit 됩니다. "
+            "누가 사용해도 데이터가 사라지지 않아요."
         )
-        st.write("")  # spacer
+    else:
+        with st.expander(
+            "⚠ **영구 저장 설정이 필요해요 (3분 소요 · 한 번만)** — 클릭해서 펼치기",
+            expanded=True,
+        ):
+            st.markdown("""
+            지금은 **저장한 품목이 시간이 지나면 사라지는 상태**예요.
+            아래 3단계만 따라하면 이후엔 누가 사용해도 영구 보존됩니다.
+
+            ---
+
+            ### ① GitHub 토큰 발급 (2분)
+
+            아래 링크를 **새 탭에서 열어** 진행하세요 👇
+
+            🔗 [**GitHub 토큰 발급 페이지 열기**](https://github.com/settings/tokens/new?scopes=repo&description=QR_quote+%EC%9E%90%EB%8F%99%EC%A0%80%EC%9E%A5)
+
+            1. 페이지가 열리면 → **Expiration** 을 `No expiration` 으로 선택
+            2. 페이지 맨 아래 초록 버튼 **Generate token** 클릭
+            3. 화면에 `ghp_xxxxxxxxxxxxx...` 같은 긴 문자열이 표시돼요
+            4. **복사 버튼(📋)** 을 눌러 토큰을 복사 (한 번만 보여요!)
+
+            ---
+
+            ### ② Streamlit Cloud Secrets 등록 (1분)
+
+            🔗 [**Streamlit Cloud 열기**](https://share.streamlit.io)
+
+            1. 본인의 앱 `qrquote` 클릭
+            2. 우측 위 점 3개(`⋮`) → **Settings** 클릭
+            3. 왼쪽 메뉴에서 **Secrets** 클릭
+            4. 큰 텍스트 박스에 **아래 4줄 그대로 복사·붙여넣기**:
+            """)
+            st.code("""GITHUB_TOKEN = "여기에_복사한_토큰_붙여넣기"
+GITHUB_OWNER = "jieunpark322"
+GITHUB_REPO = "QR_quote"
+GITHUB_BRANCH = "main\"""", language="toml")
+            st.markdown("""
+            5. 첫 줄의 `여기에_복사한_토큰_붙여넣기` 자리에 ①에서 복사한 토큰을 따옴표 안에 붙여넣기
+            6. 오른쪽 아래 **Save** 클릭 → 앱이 1~2분 안에 다시 시작
+
+            ---
+
+            ### ③ 동작 확인
+
+            앱이 다시 켜지면 이 페이지 위쪽에 🌐 **자동 영구 저장 활성화** 라는 초록 박스가 보여요.
+            그러면 끝! 이제 품목을 저장할 때마다 GitHub 에 자동 commit 됩니다.
+
+            ---
+
+            > 💡 **위 절차가 어렵게 느껴지면** — 아래 **📥 다운로드 / 📤 업로드** 로 임시 백업도 가능합니다.
+            > 다만 매번 수동이라 자동 설정을 한 번 해두는 게 편해요.
+            """)
+        st.write("")
 
         for kind, label, fname in [
             ("qr", "📋 QR오더 품목", "products.json"),
