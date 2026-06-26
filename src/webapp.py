@@ -3997,6 +3997,36 @@ def main():
     except Exception:
         pass
 
+    # ── 페이지 전환 감지: 미해결 다이얼로그 + 임시 상태 정리 + 새로고침 ──
+    prev_page = st.session_state.get("_last_active_page")
+    if prev_page is not None and prev_page != page:
+        # 1) 확인 다이얼로그/저장 마커 등 임시 플래그 모두 제거
+        transient_keys = [
+            # 전체 초기화 확인
+            "_qr_reset_confirm", "_mc_reset_confirm", "_mc_items_reset_confirm",
+            # 저장 완료 토스트 마커
+            "_catalog_saved_at_qr", "_catalog_saved_at_outdoor",
+            "_catalog_saved_at_membership",
+            # GitHub sync 결과
+            "_github_sync_qr", "_github_sync_outdoor", "_github_sync_membership",
+            # 자동저장 load_once 플래그 — 다음 진입 시 디스크에서 재로드
+            "_qr_autosave_loaded", "_mc_autosave_loaded",
+        ]
+        for k in transient_keys:
+            st.session_state.pop(k, None)
+        # 2) 메모리상 작성 데이터도 비움 (자동저장 파일은 디스크에 그대로 보존됨)
+        for k in ("items_df", "mc_items_df", "mc_doc",
+                  "catalog_pick"):
+            st.session_state.pop(k, None)
+        # 견적서 폼 위젯 값들도 비움 — 다음 진입 시 자동저장에서 복원
+        for k in list(st.session_state.keys()):
+            if k.startswith("qr_hist_") or k.startswith("qr_tpl_") \
+                    or k.startswith("mc_hist_") or k.startswith("mc_tpl_"):
+                st.session_state.pop(k, None)
+        st.session_state["_last_active_page"] = page
+        st.rerun()
+    st.session_state["_last_active_page"] = page
+
     if page == "📋 QR오더 견적기":
         render_quote_page(catalog_kind="qr")
     elif page == "🌳 [야외형] QR오더 견적기":
