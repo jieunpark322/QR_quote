@@ -1971,6 +1971,79 @@ def _render_qr_catalog_editor(catalog_kind: str = "qr"):
             use_container_width=True, key=f"save_qr_catalog_{catalog_kind}",
         )
 
+    # ── 저장 직후 결과 안내 (저장 버튼 바로 아래 = 화면 상단) ──
+    saved_marker = st.session_state.get(f"_catalog_saved_at_{catalog_kind}")
+    if saved_marker:
+        ts, count, page_name = saved_marker
+        sync = st.session_state.get(f"_github_sync_{catalog_kind}")
+        sync_ok = sync and sync[0]
+        sync_msg = sync[1] if sync else ""
+        st.markdown(
+            f"""
+<div style="background:#ECFDF5; border:2px solid #10B981;
+            border-radius:10px; padding:18px 22px; margin:10px 0;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.15);">
+  <div style="color:#065F46; font-weight:800; font-size:1.15rem;">
+    ✅ {count}개 상품 저장 완료 <span style="color:#6B7280;font-weight:500;font-size:0.9rem">({ts})</span>
+  </div>
+  <div style="color:#047857; font-size:0.92rem; margin-top:6px;">
+    "{page_name}" 페이지에 즉시 반영됐어요.
+  </div>
+  <div style="color:{'#065F46' if sync_ok else '#92400E'};
+              font-size:0.88rem; margin-top:8px;
+              background:{'#D1FAE5' if sync_ok else '#FEF3C7'};
+              padding:8px 12px; border-radius:6px;">
+    {'🌐 <strong>GitHub 영구 저장 완료</strong> — 누가 사용해도 데이터가 사라지지 않습니다.'
+     if sync_ok else
+     f'⚠ <strong>임시 저장만 됨</strong> ({sync_msg}). 상단 영구 저장 설정을 진행하면 자동 영구 보존됩니다.'}
+  </div>
+</div>
+            """,
+            unsafe_allow_html=True,
+        )
+        # 화면 중간 상단에 5초간 떠 있는 fixed toast (HTML/CSS 만으로 자동 fade)
+        from streamlit.components.v1 import html as _html
+        _html(f"""
+<style>
+@keyframes qr_toast_in {{
+  0% {{ opacity: 0; transform: translate(-50%, -20px); }}
+  10% {{ opacity: 1; transform: translate(-50%, 0); }}
+  85% {{ opacity: 1; transform: translate(-50%, 0); }}
+  100% {{ opacity: 0; transform: translate(-50%, -20px); }}
+}}
+</style>
+<script>
+(function() {{
+  try {{
+    var doc = window.parent.document;
+    var prev = doc.getElementById('qr-save-toast');
+    if (prev) prev.remove();
+    var div = doc.createElement('div');
+    div.id = 'qr-save-toast';
+    div.innerHTML = '✅ <strong>{count}개 상품 저장 완료</strong>';
+    div.style.cssText = [
+      'position: fixed', 'top: 70px', 'left: 50%',
+      'transform: translateX(-50%)',
+      'background: #10B981', 'color: white',
+      'padding: 14px 28px', 'border-radius: 999px',
+      'font-size: 0.95rem', 'font-weight: 600',
+      'box-shadow: 0 10px 25px rgba(16,185,129,0.35)',
+      'z-index: 9999', 'animation: qr_toast_in 5s ease forwards',
+      'pointer-events: none',
+    ].join(';');
+    doc.body.appendChild(div);
+    setTimeout(function() {{ if (div.parentNode) div.remove(); }}, 5200);
+  }} catch (e) {{}}
+}})();
+</script>
+""", height=0)
+        c1, _, _ = st.columns([1.5, 3, 3])
+        with c1:
+            if st.button("확인 (메시지 닫기)", key=f"close_saved_{catalog_kind}",
+                         use_container_width=True):
+                st.session_state.pop(f"_catalog_saved_at_{catalog_kind}", None)
+                st.rerun()
+
     # ── 드래그앤드롭 순서 변경 ──
     if len(df) > 1:
         with st.expander("🔃 행 순서 변경 (드래그앤드롭)", expanded=False):
@@ -2080,41 +2153,7 @@ def _render_qr_catalog_editor(catalog_kind: str = "qr"):
         )
         st.rerun()
 
-    # ── 저장 직후 결과 안내 (큰 카드 + 닫기 버튼) ──
-    saved_marker = st.session_state.get(f"_catalog_saved_at_{catalog_kind}")
-    if saved_marker:
-        ts, count, page_name = saved_marker
-        sync = st.session_state.get(f"_github_sync_{catalog_kind}")
-        sync_ok = sync and sync[0]
-        sync_msg = sync[1] if sync else ""
-        st.markdown(
-            f"""
-<div style="background:#ECFDF5; border:2px solid #10B981;
-            border-radius:10px; padding:18px 22px; margin:10px 0;">
-  <div style="color:#065F46; font-weight:800; font-size:1.15rem;">
-    ✅ {count}개 상품 저장 완료 <span style="color:#6B7280;font-weight:500;font-size:0.9rem">({ts})</span>
-  </div>
-  <div style="color:#047857; font-size:0.92rem; margin-top:6px;">
-    "{page_name}" 페이지에 즉시 반영됐어요.
-  </div>
-  <div style="color:{'#065F46' if sync_ok else '#92400E'};
-              font-size:0.88rem; margin-top:8px;
-              background:{'#D1FAE5' if sync_ok else '#FEF3C7'};
-              padding:8px 12px; border-radius:6px;">
-    {'🌐 <strong>GitHub 영구 저장 완료</strong> — 누가 사용해도 데이터가 사라지지 않습니다.'
-     if sync_ok else
-     f'⚠ <strong>임시 저장만 됨</strong> ({sync_msg}). 상단 영구 저장 설정을 진행하면 자동 영구 보존됩니다.'}
-  </div>
-</div>
-            """,
-            unsafe_allow_html=True,
-        )
-        c1, _, _ = st.columns([1.5, 3, 3])
-        with c1:
-            if st.button("확인 (메시지 닫기)", key=f"close_saved_{catalog_kind}",
-                         use_container_width=True):
-                st.session_state.pop(f"_catalog_saved_at_{catalog_kind}", None)
-                st.rerun()
+    # (저장 완료 안내는 위쪽 — 저장 버튼 직후로 이동됨)
 
     # ── 미저장 변경 감지 → 페이지 이탈 시 브라우저 경고 ──
     current_snapshot = [
