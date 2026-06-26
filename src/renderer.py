@@ -498,38 +498,38 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
             break
 
     if chosen_font_pt is None:
-        # 가장 작은 폰트로도 안 들어감 — 설명을 먼저 양보(설명은 자체 \n 줄바꿈으로
-        # 자연스럽게 wrap 됨), 그래도 부족하면 비고 양보
+        # 가장 작은 폰트로도 안 들어감 — 설명 컬럼은 한 줄 보장이 최우선이므로
+        # 비고 → 항목 순서로 양보, 설명은 마지막까지 보존
         chosen_font_pt = min(CHAR_CM_BY_PT.keys())
         raw_widths = _widths_for(CHAR_CM_BY_PT[chosen_font_pt])
         excess = sum(raw_widths) - USABLE_WIDTH
-        # 1) 설명 먼저 양보 (최소 2.5cm 까지)
+        # 1) 비고 먼저 양보 (최소 1.5cm 까지 — 짧은 문구는 wrap 허용)
         for i, c in enumerate(active_cols):
-            if c[0] == "description":
-                give = min(excess, max(raw_widths[i] - 2.5, 0))
+            if c[0] == "notes":
+                give = min(excess, max(raw_widths[i] - 1.5, 0))
                 raw_widths[i] -= give
                 excess -= give
                 break
-        # 2) 그래도 초과면 비고 양보 (최소 2.5cm 까지)
+        # 2) 그래도 초과면 항목 양보 (최소 2.5cm 까지)
         if excess > 0:
             for i, c in enumerate(active_cols):
-                if c[0] == "notes":
+                if c[0] == "name":
                     give = min(excess, max(raw_widths[i] - 2.5, 0))
                     raw_widths[i] -= give
                     excess -= give
                     break
-        # 3) 그래도 초과면 항목 양보 (최소 2.5cm 까지)
+        # 3) 마지막에 설명 양보 (최소 3.0cm — 위 두 단계로도 부족할 때만)
         if excess > 0:
             for i, c in enumerate(active_cols):
-                if c[0] == "name":
-                    raw_widths[i] = max(raw_widths[i] - excess, 2.5)
+                if c[0] == "description":
+                    raw_widths[i] = max(raw_widths[i] - excess, 3.0)
                     break
     else:
         # 남는 폭은 긴 컬럼(설명·항목·비고)에 가중 분배
         slack = USABLE_WIDTH - sum(raw_widths)
         if slack > 0.1:
             slack_weights_by_key = {
-                "description": 3.0, "name": 1.5, "notes": 3.0,
+                "description": 5.0, "name": 1.5, "notes": 2.0,
             }
             weights = [slack_weights_by_key.get(c[0], 0.0) for c in active_cols]
             wsum = sum(weights)
