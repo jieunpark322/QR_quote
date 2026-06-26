@@ -224,10 +224,10 @@ def _render_header(doc, brand: Brand, document: QuoteDocument,
     _add_paragraph(doc, title_text, font=font, size_pt=12, bold=True,
                    alignment=WD_ALIGN_PARAGRAPH.CENTER, color=primary, space_after_pt=3)
 
-    # 발행자(좌)는 페이지 좌측 끝, 발행정보(우)는 페이지 우측 여백에서 1cm 안쪽으로 끝나도록
-    # 표 자체를 좌측 정렬하고 전체 폭을 18.5cm 로 좁힘 (USABLE_WIDTH 19.5cm 중 우측 1cm 비움)
-    # 추가: 우측 셀을 inner 표보다 1cm 넓게 잡아 inner 가 우측 정렬되며 좌측 여백 1cm 확보
-    LEFT_W = Cm(10.5)
+    # 표 전체 폭은 USABLE_WIDTH 19.5cm (페이지 좌우 여백과 일치, 페이지 중앙 정렬)
+    # 우측 셀(8.0cm)을 inner 표(7.0cm)보다 1cm 넓게 잡아 inner 가 우측 정렬되며
+    # 좌측에 1cm 빈 여백 확보 → 회색 박스가 좌측 회사정보에 딱 붙지 않도록
+    LEFT_W = Cm(11.5)
     RIGHT_W = Cm(8.0)
     info_table = doc.add_table(rows=1, cols=2)
     info_table.autofit = False

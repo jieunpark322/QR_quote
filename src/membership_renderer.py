@@ -321,9 +321,9 @@ def _render_header_qr_style(doc, document: MembershipQuoteDocument,
                    alignment=WD_ALIGN_PARAGRAPH.CENTER, color=primary,
                    space_after_pt=3)
 
-    # 좌:회사정보 | 우:발급정보 — 우측 1cm 비워두기 위해 총 폭 18.5cm 로 좁힘
-    # 우측 셀을 inner 표(7.0cm)보다 1cm 넓게 잡아 좌측 여백 1cm 확보 (우측 정렬)
-    LEFT_W = Cm(10.5)
+    # 표 전체 폭 USABLE_WIDTH 19.5cm (페이지 좌우 여백과 일치, 페이지 중앙 정렬)
+    # 우측 셀(8.0cm)을 inner 표(7.0cm)보다 1cm 넓게 잡아 좌측 1cm 여백 확보 (우측 정렬)
+    LEFT_W = Cm(11.5)
     RIGHT_W = Cm(8.0)
     info_table = doc.add_table(rows=1, cols=2)
     info_table.autofit = False
