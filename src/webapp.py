@@ -2068,37 +2068,53 @@ def _render_qr_catalog_editor(catalog_kind: str = "qr"):
             if btype_label == "후불(QR결제%)":
                 item["billing_type"] = "deferred_percent"
             new_products.append(item)
-        _save_products_for(catalog_kind, new_products)
-        st.session_state[sig_key] = _qr_catalog_signature(new_products)
-        from datetime import datetime
+        with st.spinner("💾 저장 중..."):
+            _save_products_for(catalog_kind, new_products)
+            st.session_state[sig_key] = _qr_catalog_signature(new_products)
         page_name = CATALOG_LABELS.get(catalog_kind, "QR오더 견적기")
-        # 다음 rerun 에서 저장 완료 안내가 보이도록 토스트 + 세션 마커
-        st.toast(f"✅ {len(new_products)}개 상품 저장 완료",
-                 icon="✅")
+        # 풍선 애니메이션 + 토스트 + 세션 마커 (다음 rerun 에서 큰 박스로 안내)
+        st.balloons()
+        st.toast(f"✅ {len(new_products)}개 상품 저장 완료", icon="✅")
         st.session_state[f"_catalog_saved_at_{catalog_kind}"] = (
             _now_kst().strftime("%H:%M:%S"), len(new_products), page_name
         )
         st.rerun()
 
-    # ── 저장 직후 결과 안내 (저장 버튼 바로 아래) ──
+    # ── 저장 직후 결과 안내 (큰 카드 + 닫기 버튼) ──
     saved_marker = st.session_state.get(f"_catalog_saved_at_{catalog_kind}")
     if saved_marker:
         ts, count, page_name = saved_marker
-        st.success(
-            f"✅ **{count}개 상품 저장 완료** ({ts}) · "
-            f"'{page_name}' 페이지에 즉시 반영됩니다."
-        )
-        # GitHub 자동 sync 결과 안내
         sync = st.session_state.get(f"_github_sync_{catalog_kind}")
-        if sync:
-            ok, sync_msg = sync
-            if ok:
-                st.caption(f"🌐 **{sync_msg}** — GitHub 저장소에 commit 되어 영구 보존됩니다.")
-            else:
-                st.caption(
-                    f"⚠ GitHub 자동 저장 실패 ({sync_msg}). "
-                    f"상단 '⚠ 데이터 영구 저장 안내 · 백업/복원' 패널에서 수동 백업 가능."
-                )
+        sync_ok = sync and sync[0]
+        sync_msg = sync[1] if sync else ""
+        st.markdown(
+            f"""
+<div style="background:#ECFDF5; border:2px solid #10B981;
+            border-radius:10px; padding:18px 22px; margin:10px 0;">
+  <div style="color:#065F46; font-weight:800; font-size:1.15rem;">
+    ✅ {count}개 상품 저장 완료 <span style="color:#6B7280;font-weight:500;font-size:0.9rem">({ts})</span>
+  </div>
+  <div style="color:#047857; font-size:0.92rem; margin-top:6px;">
+    "{page_name}" 페이지에 즉시 반영됐어요.
+  </div>
+  <div style="color:{'#065F46' if sync_ok else '#92400E'};
+              font-size:0.88rem; margin-top:8px;
+              background:{'#D1FAE5' if sync_ok else '#FEF3C7'};
+              padding:8px 12px; border-radius:6px;">
+    {'🌐 <strong>GitHub 영구 저장 완료</strong> — 누가 사용해도 데이터가 사라지지 않습니다.'
+     if sync_ok else
+     f'⚠ <strong>임시 저장만 됨</strong> ({sync_msg}). 상단 영구 저장 설정을 진행하면 자동 영구 보존됩니다.'}
+  </div>
+</div>
+            """,
+            unsafe_allow_html=True,
+        )
+        c1, _, _ = st.columns([1.5, 3, 3])
+        with c1:
+            if st.button("확인 (메시지 닫기)", key=f"close_saved_{catalog_kind}",
+                         use_container_width=True):
+                st.session_state.pop(f"_catalog_saved_at_{catalog_kind}", None)
+                st.rerun()
 
     # ── 미저장 변경 감지 → 페이지 이탈 시 브라우저 경고 ──
     current_snapshot = [
