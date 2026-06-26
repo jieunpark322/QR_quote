@@ -224,11 +224,11 @@ def _render_header(doc, brand: Brand, document: QuoteDocument,
     _add_paragraph(doc, title_text, font=font, size_pt=12, bold=True,
                    alignment=WD_ALIGN_PARAGRAPH.CENTER, color=primary, space_after_pt=3)
 
-    # 표 전체 폭은 USABLE_WIDTH 19.5cm (페이지 좌우 여백과 일치, 페이지 중앙 정렬)
-    # 우측 셀(8.0cm)을 inner 표(7.0cm)보다 1cm 넓게 잡아 inner 가 우측 정렬되며
+    # 표 전체 폭은 USABLE_WIDTH 18.0cm (페이지 좌우 1.5cm 여백)
+    # 우측 셀(7.0cm)을 inner 표(6.0cm)보다 1cm 넓게 잡아 inner 가 우측 정렬되며
     # 좌측에 1cm 빈 여백 확보 → 회색 박스가 좌측 회사정보에 딱 붙지 않도록
-    LEFT_W = Cm(11.5)
-    RIGHT_W = Cm(8.0)
+    LEFT_W = Cm(11.0)
+    RIGHT_W = Cm(7.0)
     info_table = doc.add_table(rows=1, cols=2)
     info_table.autofit = False
     info_table.alignment = WD_TABLE_ALIGNMENT.LEFT
@@ -290,10 +290,10 @@ def _render_header(doc, brand: Brand, document: QuoteDocument,
     inner = right.add_table(rows=len(info_rows), cols=2)
     inner.autofit = False
     inner.alignment = WD_TABLE_ALIGNMENT.RIGHT
-    # 우측 발행정보 표 (라벨 2.0cm + 값 5.0cm = 7.0cm = RIGHT_W)
-    # 라벨 "유효기간"(4글자 bold)이 회색 음영 끝에 닿지 않도록 LABEL_W 여유 확보
+    # 우측 발행정보 표 (라벨 2.0cm + 값 4.0cm = 6.0cm)
+    # VALUE_W 는 이메일 "shlee@softment.co.kr" 길이에 맞춰 잔여 공백 최소화
     LABEL_W = Cm(2.0)
-    VALUE_W = Cm(5.0)
+    VALUE_W = Cm(4.0)
     inner.columns[0].width = LABEL_W
     inner.columns[1].width = VALUE_W
     for idx, (label, value) in enumerate(info_rows):
@@ -333,11 +333,11 @@ def _render_counterparty(doc, brand: Brand, document: QuoteDocument,
     cp = document.counterparty
     table = doc.add_table(rows=1, cols=1)
     table.alignment = WD_TABLE_ALIGNMENT.LEFT
-    # 페이지 폭 가득 (들여쓰기 방지)
-    table.columns[0].width = Cm(19.5)
-    _force_fixed_column_widths(table, [Cm(19.5)])
+    # 페이지 폭 가득 (들여쓰기 방지) — USABLE_WIDTH 18.0cm
+    table.columns[0].width = Cm(18.0)
+    _force_fixed_column_widths(table, [Cm(18.0)])
     cell = table.rows[0].cells[0]
-    cell.width = Cm(19.5)
+    cell.width = Cm(18.0)
     _vcenter(cell)
     _set_cell_bg(cell, "FAFBFD")
 
@@ -440,7 +440,7 @@ def _render_line_items(doc, brand: Brand, document: QuoteDocument,
     ]
 
     # ── 콘텐츠 한 줄 보장 우선 / 안 들어가면 폰트를 작게 줄여가며 시도 ──
-    USABLE_WIDTH = 19.5      # 견적서 좌우 여백 0.75cm 가정
+    USABLE_WIDTH = 18.0      # 견적서 좌우 여백 1.5cm 가정
     PAD_CM = 0.45            # 셀 좌우 패딩
     MIN_SAFE_CM = 1.0        # 모든 컬럼 최소 폭
 
@@ -960,13 +960,13 @@ def render_docx(brand: Brand, document: QuoteDocument, project_root: Path,
     ensure_totals(document, labels.quote.vat_rate)
 
     doc = Document()
-    # 1페이지 보장을 위해 견적서는 여백을 빡빡하게
+    # 1페이지 보장을 위해 견적서는 여백을 빡빡하게 (단, 좌우는 1.5cm 이상으로 페이지 가장자리 여백 확보)
     is_quote = document.document_type == "quote"
     for section in doc.sections:
         section.top_margin = Cm(0.8 if is_quote else 1.2)
         section.bottom_margin = Cm(0.8 if is_quote else 1.2)
-        section.left_margin = Cm(0.75 if is_quote else 1.8)
-        section.right_margin = Cm(0.75 if is_quote else 1.8)
+        section.left_margin = Cm(1.5 if is_quote else 1.8)
+        section.right_margin = Cm(1.5 if is_quote else 1.8)
 
     _render_logo(doc, brand, project_root)
 
